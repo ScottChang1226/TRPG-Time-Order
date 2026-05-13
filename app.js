@@ -528,7 +528,13 @@ window.slotBatchAdd = function() {
         d.setDate(d.getDate() + 1);
     }
     if (!added.length) { alert('所選範圍內的時間段已全部存在'); return; }
-    S.slots.push(...added);
+    const proposed = [...S.slots, ...added];
+    const overlap = checkSlotOverlap(proposed);
+    if (overlap) {
+        alert(`時間段重疊：「${fmtSlot(overlap.a)}」與「${fmtSlot(overlap.b)}」時間衝突，請調整後再套用。`);
+        return;
+    }
+    S.slots = sortSlots(proposed);
     go(S.editMode ? 'edit-poll' : 'create');
 };
 
@@ -573,8 +579,11 @@ async function doSubmitCreate() {
     const title = (document.getElementById('f-title')?.value||S.draft?.title||'').trim();
     const desc  = (document.getElementById('f-desc')?.value||S.draft?.desc||'').trim();
     if (!title) { alert('請輸入活動名稱'); return; }
-    const valid = S.slots.filter(s=>s.date&&s.start);
-    if (!valid.length) { alert('請至少填寫一個有日期＋開始時間的時間段'); return; }
+    const rawValid = S.slots.filter(s=>s.date&&s.start);
+    if (!rawValid.length) { alert('請至少填寫一個有日期＋開始時間的時間段'); return; }
+    const overlapC = checkSlotOverlap(rawValid);
+    if (overlapC) { alert(`時間段重疊：「${fmtSlot(overlapC.a)}」與「${fmtSlot(overlapC.b)}」時間衝突，請調整後再建立。`); return; }
+    const valid = sortSlots(rawValid);
 
     const noThreshold = parseInt(document.querySelector('.no-thresh-btn.btn-primary')?.dataset?.val||'1');
     const maybeAsNo = document.getElementById('f-maybe-as-no')?.checked||false;
@@ -719,9 +728,11 @@ function vVote() {
             <button class="btn btn-secondary btn-sm" onclick="bulkVote(null)">🗑️ 全部清空</button>
         </div>
         <div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">
-            <span style="font-size:12px;color:var(--text-m)">套用至：</span>
+            <span style="font-size:12px;color:var(--text-m);flex-shrink:0">套用至：</span>
             <button class="btn btn-sm bulk-mode-btn ${bm==='rest'?'btn-primary':'btn-secondary'}" data-mode="rest" onclick="setBulkMode('rest')">填入剩下時段</button>
             <button class="btn btn-sm bulk-mode-btn ${bm==='all'?'btn-primary':'btn-secondary'}" data-mode="all" onclick="setBulkMode('all')">全部修改</button>
+            <button class="btn btn-sm bulk-mode-btn ${bm==='rest-global'?'btn-primary':'btn-secondary'}" data-mode="rest-global" onclick="setBulkMode('rest-global')">填入本次活動剩下時段</button>
+            <button class="btn btn-sm bulk-mode-btn ${bm==='all-global'?'btn-primary':'btn-secondary'}" data-mode="all-global" onclick="setBulkMode('all-global')">修改本次活動全部時段</button>
         </div>
     </div>`;
 
@@ -783,7 +794,22 @@ window.castVote = function(slotId, val) {
 
 window.bulkVote = function(val) {
     const mode = S.bulkMode || 'rest';
-    (S.poll?.slots || []).forEach(slot => {
+    const isGlobal = mode.endsWith('-global') || val === null;
+    const isAll = mode.startsWith('all');
+    const allSlots = S.poll?.slots || [];
+    let targetSlots;
+    if (isGlobal) {
+        targetSlots = allSlots;
+    } else {
+        const weeks = getVoteWeeks(allSlots);
+        if (weeks.length > 1) {
+            const wIdx = Math.min(S.voteWeekIdx||0, Math.max(0, weeks.length-1));
+            targetSlots = allSlots.filter(s => s.date >= weeks[wIdx].start && s.date <= weeks[wIdx].end);
+        } else {
+            targetSlots = allSlots;
+        }
+    }
+    targetSlots.forEach(slot => {
         if (val === null) {
             delete S.votes[slot.id];
             document.querySelectorAll(`.avail-sel[data-slotid="${slot.id}"] .avail-btn`).forEach(btn => {
@@ -791,7 +817,7 @@ window.bulkVote = function(val) {
             });
             return;
         }
-        if (mode === 'rest' && S.votes[slot.id]) return;
+        if (!isAll && S.votes[slot.id]) return;
         S.votes[slot.id] = val;
         document.querySelectorAll(`.avail-sel[data-slotid="${slot.id}"] .avail-btn`).forEach((btn,i)=>{
             const keys=['yes','maybe','no'];
@@ -1249,8 +1275,11 @@ async function doSubmitEdit() {
     const title=(document.getElementById('f-title')?.value||S.draft?.title||'').trim();
     const desc =(document.getElementById('f-desc')?.value||S.draft?.desc||'').trim();
     if(!title){alert('請輸入活動名稱');return;}
-    const valid=S.slots.filter(s=>s.date&&s.start);
-    if(!valid.length){alert('請至少填寫一個有日期＋開始時間的時間段');return;}
+    const rawValid=S.slots.filter(s=>s.date&&s.start);
+    if(!rawValid.length){alert('請至少填寫一個有日期＋開始時間的時間段');return;}
+    const overlapE=checkSlotOverlap(rawValid);
+    if(overlapE){alert(`時間段重疊：「${fmtSlot(overlapE.a)}」與「${fmtSlot(overlapE.b)}」時間衝突，請調整後再儲存。`);return;}
+    const valid=sortSlots(rawValid);
     const noThreshold=parseInt(document.querySelector('.no-thresh-btn.btn-primary')?.dataset?.val||'1');
     const maybeAsNo=document.getElementById('f-maybe-as-no')?.checked||false;
     try{
@@ -1438,6 +1467,27 @@ function triggerDownload(content, filename, mime) {
 // ═══════════════════════════════════════════════════════════
 //  UTILS
 // ═══════════════════════════════════════════════════════════
+function sortSlots(slots) {
+    return [...slots].sort((a, b) => {
+        const ka = (a.date||'') + '|' + (a.start||'');
+        const kb = (b.date||'') + '|' + (b.start||'');
+        return ka.localeCompare(kb);
+    });
+}
+
+function checkSlotOverlap(slots) {
+    const filled = slots.filter(s => s.date && s.start);
+    for (let i = 0; i < filled.length; i++) {
+        for (let j = i + 1; j < filled.length; j++) {
+            const a = filled[i], b = filled[j];
+            if (a.date !== b.date) continue;
+            if (a.start === b.start) return { a, b };
+            if (a.end && b.end && a.start < b.end && b.start < a.end) return { a, b };
+        }
+    }
+    return null;
+}
+
 function fmtSlot(s) {
     if (!s) return '';
     const ds = s.date ? fmtDate(s.date) : '未設定日期';
