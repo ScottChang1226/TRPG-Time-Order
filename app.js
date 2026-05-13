@@ -35,6 +35,8 @@ const S = {
     calView: 'month',
     calCursor: null,
     editMode: false,
+    voteNameDraft: undefined,
+    voteWeekIdx: 0,
     darkMode: localStorage.getItem('darkMode') === '1',
 };
 
@@ -639,6 +641,8 @@ async function loadPoll() {
         if (!snap.exists()) { errInContent(`找不到代碼「${S.pollId}」的活動`); return; }
         S.poll = snap.data();
         S.votes = { ...(S.poll.responses?.[S.user.uid] || {}) };
+        S.voteNameDraft = undefined;
+        S.voteWeekIdx = 0;
         history.replaceState({}, '', location.pathname);
         go('vote');
     } catch(e) { errInContent(e.message); }
@@ -682,7 +686,16 @@ function vVote() {
     const count = Object.keys(poll.responses||{}).length;
     const isCreator = poll.creatorUid === S.user.uid;
     const url = shareUrl();
-    const slotsHtml = poll.slots.map(slot => {
+
+    // Week grouping
+    const weeks = getVoteWeeks(poll.slots);
+    const hasWeeks = weeks.length > 1;
+    const wIdx = Math.min(S.voteWeekIdx||0, Math.max(0, weeks.length-1));
+    const visSlots = hasWeeks
+        ? poll.slots.filter(s => s.date >= weeks[wIdx].start && s.date <= weeks[wIdx].end)
+        : poll.slots;
+
+    const slotsHtml = visSlots.map(slot => {
         const v = S.votes[slot.id]||'';
         return `<div class="slot-card">
             <div class="slot-card-title">🗓 ${h(fmtSlot(slot))}</div>
@@ -701,6 +714,7 @@ function vVote() {
             <button class="btn btn-sm" style="background:var(--success-l);color:#15803d;border:1px solid #86efac" onclick="bulkVote('yes')">✅ 一律可以</button>
             <button class="btn btn-sm" style="background:var(--warning-l);color:#92400e;border:1px solid #fde68a" onclick="bulkVote('maybe')">🟡 一律大概可以</button>
             <button class="btn btn-sm" style="background:var(--danger-l);color:#991b1b;border:1px solid #fca5a5" onclick="bulkVote('no')">❌ 一律不行</button>
+            <button class="btn btn-secondary btn-sm" onclick="bulkVote(null)">🗑️ 全部清空</button>
         </div>
         <div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">
             <span style="font-size:12px;color:var(--text-m)">套用至：</span>
@@ -709,49 +723,50 @@ function vVote() {
         </div>
     </div>`;
 
-    const displayName = S.user.displayName || S.user.email || '';
-    const creatorActions = isCreator ? `
-        <div class="divider"></div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <span style="font-size:13px;color:var(--text-m)">建立者操作：</span>
-            <button class="btn btn-outline btn-sm" onclick="startEditPoll()">✏️ 編輯活動</button>
-            <button class="btn btn-danger btn-sm" onclick="doDeletePoll()">🗑️ 刪除此活動</button>
-        </div>` : '';
+    const displayName = S.voteNameDraft !== undefined ? S.voteNameDraft : (S.user.displayName || S.user.email || '');
+    const weekNav = hasWeeks ? `<div class="vote-week-nav">
+        <button class="btn btn-secondary btn-sm" onclick="setVoteWeek(${wIdx-1})" ${wIdx>0?'':'disabled'}>&#9664;</button>
+        <select class="vote-week-select" onchange="setVoteWeek(parseInt(this.value))">
+            ${weeks.map((w,i)=>`<option value="${i}" ${i===wIdx?'selected':''}>${h(w.label)}</option>`).join('')}
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="setVoteWeek(${wIdx+1})" ${wIdx<weeks.length-1?'':'disabled'}>&#9654;</button>
+        <span style="font-size:12px;color:var(--text-m)">${visSlots.length} 個時段</span>
+    </div>` : '';
 
-    const participantActions = !isCreator ? `
-        <div class="divider"></div>
-        <button class="btn btn-secondary btn-sm" onclick="doLeavePoll()">🚪 離開活動</button>` : '';
+    const topBar = `<div class="vote-action-bar">
+        <div class="vote-action-row">
+            <button class="btn btn-outline btn-sm" onclick="S.pollId='${poll.id}'; go('live-init')">📊 查看結果</button>
+            ${isCreator ? `
+            <button class="btn btn-outline btn-sm" onclick="startEditPoll()">✏️ 編輯活動</button>
+            <button class="btn btn-danger btn-sm" onclick="doDeletePoll()">🗑️ 刪除活動</button>` :
+            `<button class="btn btn-secondary btn-sm" onclick="doLeavePoll()">🚪 離開活動</button>`}
+        </div>
+        <div class="copy-row" style="margin-top:8px">
+            <span class="vote-code-lbl">代碼：<code>${h(S.pollId)}</code></span>
+            <input class="copy-input" id="vote-share-url" type="text" value="${h(url)}" readonly style="flex:1;min-width:100px"/>
+            <button class="btn btn-secondary btn-sm" onclick="doCopy('vote-share-url',this)">複製連結</button>
+        </div>
+    </div>`;
 
     return `<div class="card">
         <button class="nav-back" onclick="go('dashboard')">← 返回首頁</button>
         <div class="card-title">${h(poll.title)}</div>
-        ${poll.desc ? `<p style="color:var(--text-m);font-size:14px;margin-bottom:12px">${h(poll.desc)}</p>` : ''}
-        <p style="font-size:13px;color:var(--text-m);margin-bottom:18px">由 ${h(poll.creator)} 建立・${count} 人已填寫</p>
-        <div class="form-group">
+        ${poll.desc ? `<p style="color:var(--text-m);font-size:14px;margin-bottom:8px">${h(poll.desc)}</p>` : ''}
+        <p style="font-size:13px;color:var(--text-m);margin-bottom:10px">由 ${h(poll.creator)} 建立・${count} 人已填寫</p>
+        ${topBar}
+        <div class="form-group" style="margin-top:14px">
             <label>填寫者</label>
             <input class="fc" id="voter-name" type="text" value="${h(displayName)}"
-                maxlength="40" placeholder="您的顯示名稱（可修改）" />
+                maxlength="40" placeholder="您的顯示名稱（可修改）"
+                oninput="S.voteNameDraft=this.value" />
         </div>
         <div class="form-group">
             <label>請選擇您的可用時間</label>
             ${bulkPanel}
-            ${slotsHtml}
+            ${weekNav}
+            <div class="vote-slot-scroll">${slotsHtml}</div>
         </div>
-        <div class="btn-group">
-            <button class="btn btn-success btn-lg" onclick="doSubmitVote()">提交 ✓</button>
-            <button class="btn btn-outline" onclick="S.pollId='${poll.id}'; go('live-init')">查看結果</button>
-        </div>
-        ${creatorActions}
-        ${participantActions}
-        <div class="divider"></div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-            <span style="font-size:13px;font-weight:600">活動代碼：</span>
-            <code>${h(S.pollId)}</code>
-        </div>
-        <div class="copy-row">
-            <input class="copy-input" id="vote-share-url" type="text" value="${h(url)}" readonly />
-            <button class="btn btn-secondary btn-sm" onclick="doCopy('vote-share-url',this)">複製分享連結</button>
-        </div>
+        <button class="btn btn-success btn-lg btn-block" onclick="doSubmitVote()" style="margin-top:4px">提交 ✓</button>
     </div>`;
 }
 
@@ -767,6 +782,13 @@ window.castVote = function(slotId, val) {
 window.bulkVote = function(val) {
     const mode = S.bulkMode || 'rest';
     (S.poll?.slots || []).forEach(slot => {
+        if (val === null) {
+            delete S.votes[slot.id];
+            document.querySelectorAll(`.avail-sel[data-slotid="${slot.id}"] .avail-btn`).forEach(btn => {
+                btn.className = 'avail-btn';
+            });
+            return;
+        }
         if (mode === 'rest' && S.votes[slot.id]) return;
         S.votes[slot.id] = val;
         document.querySelectorAll(`.avail-sel[data-slotid="${slot.id}"] .avail-btn`).forEach((btn,i)=>{
@@ -781,6 +803,35 @@ window.setBulkMode = function(mode) {
     document.querySelectorAll('.bulk-mode-btn').forEach(b=>{
         b.className='btn btn-sm bulk-mode-btn '+(b.dataset.mode===mode?'btn-primary':'btn-secondary');
     });
+};
+
+function getVoteWeeks(slots) {
+    const seen = new Set();
+    const weeks = [];
+    slots.forEach(s => {
+        if (!s.date) return;
+        const d = new Date(s.date + 'T00:00:00');
+        const dow = d.getDay();
+        const ws = new Date(d); ws.setDate(d.getDate() - dow);
+        const key = localISO(ws);
+        if (!seen.has(key)) {
+            seen.add(key);
+            const we = new Date(ws); we.setDate(ws.getDate() + 6);
+            const mo = ws.getMonth() + 1;
+            const wNum = Math.ceil(ws.getDate() / 7);
+            const ordinals = ['一','二','三','四','五'];
+            const lbl = `${mo}月 / 第${ordinals[wNum-1]||(wNum)}週 (${mo}/${ws.getDate()}～${we.getMonth()+1}/${we.getDate()})`;
+            weeks.push({ key, label: lbl, start: key, end: localISO(we) });
+        }
+    });
+    return weeks.sort((a,b) => a.key.localeCompare(b.key));
+}
+window.setVoteWeek = function(idx) {
+    const nameEl = document.getElementById('voter-name');
+    if (nameEl) S.voteNameDraft = nameEl.value;
+    S.voteWeekIdx = idx;
+    const c = document.getElementById('content');
+    if (c) c.innerHTML = vVote();
 };
 
 async function doSubmitVote() {
@@ -956,6 +1007,18 @@ function vResults() {
 
     return `<div class="card">
         <button class="nav-back" onclick="go('dashboard')">← 返回首頁</button>
+        <div class="card-title" style="margin-bottom:8px">${h(poll.title)}</div>
+        <div class="vote-action-bar">
+            <div class="vote-action-row">
+                ${!poll.deleted ? `<button class="btn btn-outline btn-sm" onclick="S.pollId='${poll.id}'; go('poll-loading')">📝 修改我的填寫</button>` : ''}
+                ${creatorBtns}
+            </div>
+            <div class="copy-row" style="margin-top:8px">
+                <span class="vote-code-lbl">代碼：<code>${h(S.pollId)}</code></span>
+                <input class="copy-input" id="r-url" type="text" value="${h(shareUrl())}" readonly style="flex:1;min-width:100px"/>
+                <button class="btn btn-secondary btn-sm" onclick="doCopy('r-url',this)">複製連結</button>
+            </div>
+        </div>
         ${deletedBanner}
         ${banner}
         ${n>0 ? vCalendar(scored) : ''}
@@ -965,17 +1028,7 @@ function vResults() {
         </div>
         <div class="slot-list-scroll">${slotsHtml}</div>
         <div class="divider"></div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-            ${!poll.deleted ? `<button class="btn btn-outline btn-sm" onclick="S.pollId='${poll.id}'; go('poll-loading')">📝 修改我的填寫</button>` : ''}
-            ${creatorBtns}
-        </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;align-items:center">
-            <div class="btn-group">${dlBtns}</div>
-            <div class="copy-row" style="flex:1;min-width:180px">
-                <input class="copy-input" id="r-url" type="text" value="${h(shareUrl())}" readonly />
-                <button class="btn btn-secondary btn-sm" onclick="doCopy('r-url',this)">複製連結</button>
-            </div>
-        </div>
+        <div class="btn-group">${dlBtns}</div>
     </div>`;
 }
 
@@ -1013,8 +1066,8 @@ function vCalendar(scored) {
         const yr=cursor.getFullYear(), mo=cursor.getMonth();
         title = `${yr}年${mo+1}月`;
         const firstDay=new Date(yr,mo,1), lastDay=new Date(yr,mo+1,0);
-        prevCursor = new Date(yr,mo-1,1).toISOString().slice(0,10);
-        nextCursor = new Date(yr,mo+1,1).toISOString().slice(0,10);
+        prevCursor = localISO(new Date(yr,mo-1,1));
+        nextCursor = localISO(new Date(yr,mo+1,1));
         cells = [];
         for(let i=0;i<firstDay.getDay();i++) cells.push(null);
         for(let d=1;d<=lastDay.getDate();d++){
@@ -1028,12 +1081,12 @@ function vCalendar(scored) {
         const ws=new Date(cursor); ws.setDate(cursor.getDate()-dow);
         const we=new Date(ws); we.setDate(ws.getDate()+6);
         title=`${ws.getMonth()+1}/${ws.getDate()} – ${we.getMonth()+1}/${we.getDate()}`;
-        const pv=new Date(ws); pv.setDate(ws.getDate()-7); prevCursor=pv.toISOString().slice(0,10);
-        const nx=new Date(ws); nx.setDate(ws.getDate()+7); nextCursor=nx.toISOString().slice(0,10);
+        const pv=new Date(ws); pv.setDate(ws.getDate()-7); prevCursor=localISO(pv);
+        const nx=new Date(ws); nx.setDate(ws.getDate()+7); nextCursor=localISO(nx);
         cells=[];
         for(let i=0;i<7;i++){
             const d=new Date(ws); d.setDate(ws.getDate()+i);
-            const iso=d.toISOString().slice(0,10);
+            const iso=localISO(d);
             cells.push({iso, d:d.getDate(), slots:daySlots[iso]||[]});
         }
     }
@@ -1300,6 +1353,9 @@ function fmtDate(ds) {
     const d  = new Date(ds+'T00:00:00');
     const wd = ['日','一','二','三','四','五','六'][d.getDay()];
     return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日（${wd}）`;
+}
+function localISO(d) {
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
 // ── Expose globals ─────────────────────────────────────────
