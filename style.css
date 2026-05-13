@@ -181,6 +181,26 @@ label{display:block;margin-bottom:5px;font-size:13px;font-weight:600;color:var(-
   font-family:inherit;
 }
 .fc:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-l);}
+
+/* Date input: force dark color-scheme in dark mode (fixes calendar icon visibility) */
+:root.dark input[type="date"] { color-scheme: dark; }
+
+/* Time text input: monospace, centred, clearly editable */
+.time-fc{
+  font-family:'Consolas','SF Mono','Menlo',monospace;
+  text-align:center;
+  letter-spacing:.06em;
+  border-color:var(--primary);
+  background:var(--input-bg);
+}
+.time-fc::placeholder{
+  font-family:inherit;
+  font-size:12px;
+  letter-spacing:normal;
+  color:var(--neutral);
+  text-align:center;
+}
+
 .or-divider{display:flex;align-items:center;gap:10px;margin:18px 0;color:var(--text-m);font-size:13px;}
 .or-divider::before,.or-divider::after{content:'';flex:1;height:1px;background:var(--border);}
 
