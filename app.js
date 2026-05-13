@@ -32,6 +32,9 @@ const S = {
     joinedPolls: [],
     pollsLoaded: false,
     authError: '',
+    calView: 'month',
+    calCursor: null,
+    editMode: false,
     darkMode: localStorage.getItem('darkMode') === '1',
 };
 
@@ -144,6 +147,7 @@ function paint() {
         case 'poll-loading': loadPoll(); break;
         case 'vote':         content.innerHTML = vVote();        break;
         case 'live':         content.innerHTML = vResults();     break;
+        case 'edit-poll':    content.innerHTML = vEditPoll();    break;
         default: content.innerHTML = vDashboard();
     }
     setTopbarTitle();
@@ -157,6 +161,7 @@ function setTopbarTitle() {
         'joined-polls': '我參加過的活動', create: '建立新活動',
         created: '建立成功', vote: S.poll?.title || '填寫時間',
         live: (S.poll?.title || '活動結果') + ' — 結果',
+        'edit-poll': '編輯活動',
         'poll-loading': '載入中…',
     };
     el.textContent = map[S.view] || '';
@@ -412,6 +417,9 @@ window.openPoll = function(id) { S.pollId = id; go('poll-loading'); };
 // ═══════════════════════════════════════════════════════════
 function vCreate() {
     const today = new Date().toISOString().slice(0,10);
+    const settings = S.draft?.settings || {};
+    const noThresh = settings.noThreshold || 1;
+    const maybeAsNo = settings.maybeAsNo || false;
     const slotsHtml = S.slots.map(s => `
         <div class="slot-row">
             <input class="fc" type="date" min="${today}" value="${h(s.date)}"
@@ -475,6 +483,19 @@ function vCreate() {
             </div>
             <button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="slotBatchAdd()">套用</button>
         </div>
+        <div class="form-group" style="margin-top:16px">
+            <label>🎨 顏色判定設定（選用）</label>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+                <span style="font-size:13px;color:var(--text-m)">幾人「不行」才顯示紅色：</span>
+                <div class="btn-group">
+                    ${[1,2,3,4].map(v=>`<button class="btn btn-sm no-thresh-btn ${noThresh===v?'btn-primary':'btn-secondary'}" data-val="${v}" onclick="setNoThresh(${v})">${v}人</button>`).join('')}
+                </div>
+            </div>
+            <label class="checkbox-label">
+                <input type="checkbox" id="f-maybe-as-no" ${maybeAsNo?'checked':''}> 將「大概可以」視為「不行」計算
+            </label>
+            <p style="font-size:11px;color:var(--text-m);margin-top:6px">此設定影響結果頁的顏色顯示，不影響填寫。</p>
+        </div>
         <button class="btn btn-primary btn-lg btn-block" style="margin-top:16px" onclick="doSubmitCreate()">建立活動 →</button>
     </div>`;
 }
@@ -505,12 +526,12 @@ window.slotBatchAdd = function() {
     }
     if (!added.length) { alert('所選範圍內的時間段已全部存在'); return; }
     S.slots.push(...added);
-    go('create');
+    go(S.editMode ? 'edit-poll' : 'create');
 };
 
 window.slotSet = function(id, field, val) { const s=S.slots.find(x=>x.id===id); if(s) s[field]=val; };
-window.slotAdd = function() { syncSlotsFromDom(); S.slots.push(mkSlot()); go('create'); };
-window.slotRemove = function(id) { if(S.slots.length===1) return; syncSlotsFromDom(); S.slots=S.slots.filter(x=>x.id!==id); go('create'); };
+window.slotAdd = function() { syncSlotsFromDom(); S.slots.push(mkSlot()); go(S.editMode ? 'edit-poll' : 'create'); };
+window.slotRemove = function(id) { if(S.slots.length===1) return; syncSlotsFromDom(); S.slots=S.slots.filter(x=>x.id!==id); go(S.editMode ? 'edit-poll' : 'create'); };
 
 // Auto-format time text input: inserts colon after 2 digits (e.g. "20" → "20:")
 window.fmtTimeInput = function(el) {
@@ -520,6 +541,12 @@ window.fmtTimeInput = function(el) {
     el.value = v;
 };
 
+window.setNoThresh = function(val) {
+    document.querySelectorAll('.no-thresh-btn').forEach(b => {
+        b.className = 'btn btn-sm no-thresh-btn ' + (parseInt(b.dataset.val) === val ? 'btn-primary' : 'btn-secondary');
+    });
+};
+
 function syncSlotsFromDom() {
     S.slots.forEach(s => {
         const de=document.querySelector(`input[onchange*="${s.id},'date'"]`);
@@ -527,9 +554,14 @@ function syncSlotsFromDom() {
         const ee=document.querySelector(`input[onchange*="${s.id},'end'"]`);
         if(de) s.date=de.value; if(se) s.start=se.value; if(ee) s.end=ee.value;
     });
+    const activeThresh = document.querySelector('.no-thresh-btn.btn-primary');
     S.draft = {
         title: document.getElementById('f-title')?.value||'',
         desc:  document.getElementById('f-desc')?.value||'',
+        settings: {
+            noThreshold: activeThresh ? parseInt(activeThresh.dataset.val) : (S.draft?.settings?.noThreshold||1),
+            maybeAsNo: document.getElementById('f-maybe-as-no')?.checked ?? (S.draft?.settings?.maybeAsNo||false),
+        },
     };
 }
 
@@ -541,6 +573,8 @@ async function doSubmitCreate() {
     const valid = S.slots.filter(s=>s.date&&s.start);
     if (!valid.length) { alert('請至少填寫一個有日期＋開始時間的時間段'); return; }
 
+    const noThreshold = parseInt(document.querySelector('.no-thresh-btn.btn-primary')?.dataset?.val||'1');
+    const maybeAsNo = document.getElementById('f-maybe-as-no')?.checked||false;
     const pollId = uid().toUpperCase().slice(0,8);
     const poll = {
         id: pollId, title, desc,
@@ -548,6 +582,7 @@ async function doSubmitCreate() {
         creatorUid: S.user.uid,
         createdAt: new Date().toISOString(),
         slots: valid.map(s=>({id:s.id,date:s.date,start:s.start,end:s.end,label:fmtSlot(s)})),
+        settings: { noThreshold, maybeAsNo },
         responses: {}
     };
     try {
@@ -775,10 +810,32 @@ function listenResults() {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  SLOT HEAT HELPERS
+// ═══════════════════════════════════════════════════════════
+function getSlotHeat(s, n, settings) {
+    if (n === 0) return 'poor';
+    const noThresh = Math.max(1, settings?.noThreshold ?? 1);
+    const maybeAsNo = settings?.maybeAsNo ?? false;
+    const effNo = s.no + (maybeAsNo ? s.maybe : 0);
+    if (s.yes === n) return 'great';
+    if (effNo === 0) return 'good';
+    if (effNo < noThresh) return 'ok';
+    return 'poor';
+}
+function getSlotLabel(s, n) {
+    if (s.heat === 'great') return {t:'🌟 所有人都可以！', c:'sc-great'};
+    if (s.heat === 'good')  return {t:'✅ 所有人都有空',  c:'sc-good'};
+    if (n > 0 && s.yes+s.maybe === n-1) return {t:'👍 幾乎所有人有空', c:'sc-ok'};
+    if (n > 0) return {t:`${s.yes+s.maybe}/${n} 人有空`, c:s.heat==='ok'?'sc-ok':'sc-poor'};
+    return {t:'尚無人填寫', c:'sc-poor'};
+}
+
+// ═══════════════════════════════════════════════════════════
 //  VIEW: RESULTS
 // ═══════════════════════════════════════════════════════════
 function vResults() {
     const poll = S.poll;
+    const settings = poll.settings || {};
     const resp = poll.responses||{};
     const entries = Object.entries(resp).map(([uid, votes]) => ({
         name: votes._name || uid, uid, votes
@@ -795,23 +852,14 @@ function vResults() {
             else if(v==='no'){no++;xN.push(name);}
         });
         const score = n>0 ? (yes*2+maybe)/(n*2) : 0;
-        return {slot,yes,maybe,no,score,yN,mN,xN,
-                allAvail:n>0&&yes+maybe===n,allYes:n>0&&yes===n};
+        const heat = getSlotHeat({yes,maybe,no}, n, settings);
+        return {slot,yes,maybe,no,score,yN,mN,xN,heat};
     }).sort((a,b)=>b.score-a.score);
 
-    const best = scored.filter(s=>s.allAvail&&n>0);
+    const best = scored.filter(s=>s.heat==='great'||s.heat==='good');
 
-    function hCls(s){ if(s.allYes) return 'heat-great'; if(s.allAvail) return 'heat-good'; if(s.score>=.5) return 'heat-ok'; return 'heat-poor'; }
-    function scLbl(s){
-        if(s.allYes)           return {t:'🌟 所有人都可以！',c:'sc-great'};
-        if(s.allAvail)         return {t:'✅ 所有人都有空',c:'sc-good'};
-        if(s.yes+s.maybe===n-1)return {t:'👍 幾乎所有人有空',c:'sc-ok'};
-        if(n>0)                return {t:`${s.yes+s.maybe}/${n} 人有空`,c:s.score>=.5?'sc-ok':'sc-poor'};
-        return {t:'尚無人填寫',c:'sc-poor'};
-    }
-
-    const slotsHtml = scored.map(s=>{
-        const l=scLbl(s);
+    const slotsHtml = scored.map((s,i)=>{
+        const l = getSlotLabel(s, n);
         const yp=n>0?(s.yes/n*100).toFixed(0):0;
         const mp=n>0?(s.maybe/n*100).toFixed(0):0;
         const tags=[
@@ -823,7 +871,7 @@ function vResults() {
         const gcBtn=`<button class="btn btn-sm" style="background:#4285F4;color:#fff;gap:4px" onclick='addGC(${gcData})'>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/></svg>
             加入 Google 日曆</button>`;
-        return `<div class="result-slot ${hCls(s)}">
+        return `<div class="result-slot heat-${s.heat}" id="rs-${s.slot.date||i}">
             <div class="res-header">
                 <div>
                     <div class="res-title">${h(fmtSlot(s.slot))}</div>
@@ -853,21 +901,27 @@ function vResults() {
         <button class="btn btn-secondary btn-sm" onclick="dlXLSX()">📊 下載 Excel</button>
         <button class="btn btn-secondary btn-sm" onclick="dlCSV()">📄 下載 CSV</button>`;
 
-    const creatorDeleteBtn = isCreator && !poll.deleted
-        ? `<button class="btn btn-danger btn-sm" onclick="doDeletePoll()">🗑️ 刪除活動</button>` : '';
+    const creatorBtns = isCreator && !poll.deleted ? `
+        <button class="btn btn-outline btn-sm" onclick="startEditPoll()">✏️ 編輯活動</button>
+        <button class="btn btn-danger btn-sm" onclick="doDeletePoll()">🗑️ 刪除活動</button>` : '';
 
     return `<div class="card">
         <button class="nav-back" onclick="go('dashboard')">← 返回首頁</button>
         ${deletedBanner}
         ${banner}
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-            <p style="font-size:13px;color:var(--text-m);margin:0">${n} 人已填寫<span class="live-dot" title="即時更新"></span></p>
-            <div class="btn-group">${dlBtns}${creatorDeleteBtn}</div>
+        ${n>0 ? vCalendar(scored) : ''}
+        <div style="display:flex;align-items:center;justify-content:space-between;margin:12px 0 8px;flex-wrap:wrap;gap:8px">
+            <p style="font-size:13px;color:var(--text-m);margin:0">📋 詳細列表（依可行性排序）<span class="live-dot" title="即時更新"></span></p>
+            <p style="font-size:13px;color:var(--text-m);margin:0">${n} 人已填寫</p>
         </div>
-        <div>${slotsHtml}</div>
+        <div class="slot-list-scroll">${slotsHtml}</div>
         <div class="divider"></div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-            ${!poll.deleted ? `<button class="btn btn-outline btn-sm" onclick="S.pollId='${poll.id}'; go('poll-loading')">✏️ 修改我的填寫</button>` : ''}
+            ${!poll.deleted ? `<button class="btn btn-outline btn-sm" onclick="S.pollId='${poll.id}'; go('poll-loading')">📝 修改我的填寫</button>` : ''}
+            ${creatorBtns}
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;align-items:center">
+            <div class="btn-group">${dlBtns}</div>
             <div class="copy-row" style="flex:1;min-width:180px">
                 <input class="copy-input" id="r-url" type="text" value="${h(shareUrl())}" readonly />
                 <button class="btn btn-secondary btn-sm" onclick="doCopy('r-url',this)">複製連結</button>
@@ -881,10 +935,219 @@ const origGo = go;
 window.go = function(view, extra={}) {
     if (view === 'results-loading' || view === 'live-init') {
         Object.assign(S, extra); S.view = 'results-loading'; paint();
+        S.calCursor = null;
         listenResults(); return;
     }
     origGo(view, extra);
 };
+
+// ═══════════════════════════════════════════════════════════
+//  CALENDAR WIDGET
+// ═══════════════════════════════════════════════════════════
+function vCalendar(scored) {
+    const daySlots = {};
+    scored.forEach(s => {
+        const d = s.slot.date;
+        if (!d) return;
+        if (!daySlots[d]) daySlots[d] = [];
+        daySlots[d].push(s);
+    });
+    const allDates = Object.keys(daySlots).sort();
+    if (!allDates.length) return '';
+    if (!S.calCursor) S.calCursor = allDates[0];
+    const cursor = new Date(S.calCursor + 'T00:00:00');
+    const hRank = {great:3,good:2,ok:1,poor:0};
+    const isMonth = S.calView !== 'week';
+    let title, cells, prevCursor, nextCursor;
+
+    if (isMonth) {
+        const yr=cursor.getFullYear(), mo=cursor.getMonth();
+        title = `${yr}年${mo+1}月`;
+        const firstDay=new Date(yr,mo,1), lastDay=new Date(yr,mo+1,0);
+        prevCursor = new Date(yr,mo-1,1).toISOString().slice(0,10);
+        nextCursor = new Date(yr,mo+1,1).toISOString().slice(0,10);
+        cells = [];
+        for(let i=0;i<firstDay.getDay();i++) cells.push(null);
+        for(let d=1;d<=lastDay.getDate();d++){
+            const iso=`${yr}-${String(mo+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            cells.push({iso, d, slots:daySlots[iso]||[]});
+        }
+        const rem=(7-cells.length%7)%7;
+        for(let i=0;i<rem;i++) cells.push(null);
+    } else {
+        const dow=cursor.getDay();
+        const ws=new Date(cursor); ws.setDate(cursor.getDate()-dow);
+        const we=new Date(ws); we.setDate(ws.getDate()+6);
+        title=`${ws.getMonth()+1}/${ws.getDate()} – ${we.getMonth()+1}/${we.getDate()}`;
+        const pv=new Date(ws); pv.setDate(ws.getDate()-7); prevCursor=pv.toISOString().slice(0,10);
+        const nx=new Date(ws); nx.setDate(ws.getDate()+7); nextCursor=nx.toISOString().slice(0,10);
+        cells=[];
+        for(let i=0;i<7;i++){
+            const d=new Date(ws); d.setDate(ws.getDate()+i);
+            const iso=d.toISOString().slice(0,10);
+            cells.push({iso, d:d.getDate(), slots:daySlots[iso]||[]});
+        }
+    }
+
+    const wd=['日','一','二','三','四','五','六'];
+    const headHtml=wd.map(w=>`<div class="cal-head">${w}</div>`).join('');
+    const cellsHtml=cells.map(c=>{
+        if(!c) return `<div class="cal-cell cal-pad"></div>`;
+        let bestHeat='';
+        if(c.slots.length){
+            const best=c.slots.reduce((a,b)=>(hRank[a.heat]||0)>=(hRank[b.heat]||0)?a:b);
+            bestHeat=best.heat;
+        }
+        const times=c.slots.slice(0,2).map(s=>`<div class="cal-time">${s.slot.start||''}${s.slot.end?' – '+s.slot.end:''}</div>`).join('');
+        const more=c.slots.length>2?`<div class="cal-time cal-more">+${c.slots.length-2}</div>`:'';
+        return `<div class="cal-cell${bestHeat?' cal-'+bestHeat:''}" onclick="calJump('${c.iso}')">
+            <span class="cal-day-num">${c.d}</span>
+            <div class="cal-slot-info">${times}${more}</div>
+        </div>`;
+    }).join('');
+
+    return `<div class="cal-widget">
+        <div class="cal-toolbar">
+            <button class="btn btn-secondary btn-sm" onclick="calNav('${prevCursor}')">◀</button>
+            <span class="cal-title">${title}</span>
+            <button class="btn btn-secondary btn-sm" onclick="calNav('${nextCursor}')">▶</button>
+            <span style="flex:1"></span>
+            <button class="btn btn-sm ${S.calView==='month'?'btn-primary':'btn-secondary'}" onclick="calSwitch('month')">月</button>
+            <button class="btn btn-sm ${S.calView==='week'?'btn-primary':'btn-secondary'}" onclick="calSwitch('week')">週</button>
+        </div>
+        <div class="cal-grid">${headHtml}${cellsHtml}</div>
+        <div class="cal-legend">
+            <span class="cal-leg"><span class="cal-leg-dot cal-great"></span>全員可以</span>
+            <span class="cal-leg"><span class="cal-leg-dot cal-good"></span>全員有空</span>
+            <span class="cal-leg"><span class="cal-leg-dot cal-ok"></span>部分有空</span>
+            <span class="cal-leg"><span class="cal-leg-dot cal-poor"></span>有人無法</span>
+        </div>
+    </div>`;
+}
+window.calNav    = function(cursor) { S.calCursor=cursor; const c=document.getElementById('content'); if(c) c.innerHTML=vResults(); };
+window.calSwitch = function(view)   { S.calView=view;     const c=document.getElementById('content'); if(c) c.innerHTML=vResults(); };
+window.calJump   = function(iso) {
+    const el=document.querySelector('[id^="rs-'+iso+'"]');
+    if(el) el.scrollIntoView({behavior:'smooth',block:'nearest'});
+};
+
+// ═══════════════════════════════════════════════════════════
+//  EDIT POLL
+// ═══════════════════════════════════════════════════════════
+window.startEditPoll = function() {
+    if(!S.poll) return;
+    S.editMode = true;
+    S.slots = S.poll.slots.map(s=>({...s}));
+    S.draft = { title:S.poll.title, desc:S.poll.desc||'', settings:S.poll.settings||{} };
+    go('edit-poll');
+};
+window.cancelEdit = function() {
+    S.editMode = false; S.slots=[mkSlot()]; S.draft=null;
+    go('live-init');
+};
+
+async function doSubmitEdit() {
+    syncSlotsFromDom();
+    const title=(document.getElementById('f-title')?.value||S.draft?.title||'').trim();
+    const desc =(document.getElementById('f-desc')?.value||S.draft?.desc||'').trim();
+    if(!title){alert('請輸入活動名稱');return;}
+    const valid=S.slots.filter(s=>s.date&&s.start);
+    if(!valid.length){alert('請至少填寫一個有日期＋開始時間的時間段');return;}
+    const noThreshold=parseInt(document.querySelector('.no-thresh-btn.btn-primary')?.dataset?.val||'1');
+    const maybeAsNo=document.getElementById('f-maybe-as-no')?.checked||false;
+    try{
+        await updateDoc(doc(db,'polls',S.pollId),{
+            title,desc,
+            slots:valid.map(s=>({id:s.id,date:s.date,start:s.start,end:s.end,label:fmtSlot(s)})),
+            settings:{noThreshold,maybeAsNo},
+            updatedAt:new Date().toISOString(),
+        });
+        Object.assign(S.poll,{title,desc,slots:valid.map(s=>({id:s.id,date:s.date,start:s.start,end:s.end})),settings:{noThreshold,maybeAsNo}});
+        const idx=S.myPolls.findIndex(p=>p.id===S.pollId);
+        if(idx!==-1) S.myPolls[idx]={...S.myPolls[idx],title,desc};
+        S.editMode=false; S.slots=[mkSlot()]; S.draft=null;
+        go('live-init');
+    }catch(e){alert('儲存失敗：'+e.message);}
+}
+
+function vEditPoll() {
+    const poll=S.poll;
+    const today=new Date().toISOString().slice(0,10);
+    const settings=S.draft?.settings||{};
+    const noThresh=settings.noThreshold||1;
+    const maybeAsNo=settings.maybeAsNo||false;
+    const slotsHtml=S.slots.map(s=>`
+        <div class="slot-row">
+            <input class="fc" type="date" value="${h(s.date)}"
+                onchange="slotSet('${s.id}','date',this.value)" />
+            <input class="fc time-fc" type="text" inputmode="numeric" maxlength="5"
+                placeholder="開始 HH:MM" value="${h(s.start)}"
+                oninput="fmtTimeInput(this)"
+                onchange="slotSet('${s.id}','start',this.value)" />
+            <input class="fc time-fc" type="text" inputmode="numeric" maxlength="5"
+                placeholder="結束 HH:MM" value="${h(s.end)}"
+                oninput="fmtTimeInput(this)"
+                onchange="slotSet('${s.id}','end',this.value)" />
+            <button class="btn btn-secondary btn-sm remove-btn" onclick="slotRemove('${s.id}')"
+                ${S.slots.length===1?'disabled':''}>✕</button>
+        </div>`).join('');
+
+    return `<div class="card">
+        <button class="nav-back" onclick="cancelEdit()">← 取消編輯</button>
+        <div class="card-title">✏️ 編輯活動</div>
+        <div class="card-sub">${h(poll.title)}</div>
+        <div class="form-group"><label>活動名稱 *</label>
+            <input class="fc" id="f-title" type="text" maxlength="100" value="${h(S.draft?.title||poll.title||'')}" /></div>
+        <div class="form-group"><label>描述（可選）</label>
+            <textarea class="fc" id="f-desc" rows="2" maxlength="400">${h(S.draft?.desc??poll.desc??'')}</textarea></div>
+        <div class="form-group">
+            <label>候選時間段</label>
+            <p style="font-size:12px;color:var(--text-m);margin-bottom:9px">日期 ｜ 開始時間 ｜ 結束時間（可留空）</p>
+            <div id="slots-wrap">${slotsHtml}</div>
+            <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+                <button class="btn btn-secondary btn-sm" onclick="slotAdd()">＋ 新增時間段</button>
+                <button class="btn btn-outline btn-sm" onclick="toggleBatchPanel()">📅 批次套用日期範圍</button>
+            </div>
+        </div>
+        <div class="batch-panel" id="batch-panel" style="display:none">
+            <p style="font-weight:600;font-size:13px;margin-bottom:10px">📅 批次新增時間段</p>
+            <p style="font-size:12px;color:var(--text-m);margin-bottom:10px">依照下方設定，對日期範圍內每天新增一個時間段</p>
+            <div class="date-range-row">
+                <div style="flex:1;min-width:130px"><label>開始日期</label>
+                    <input class="fc" type="date" id="batch-start-date" min="${today}" /></div>
+                <div style="align-self:flex-end;padding-bottom:10px;color:var(--text-m)">～</div>
+                <div style="flex:1;min-width:130px"><label>結束日期</label>
+                    <input class="fc" type="date" id="batch-end-date" min="${today}" /></div>
+            </div>
+            <div class="date-range-row" style="margin-top:8px">
+                <div style="flex:1;min-width:130px"><label>開始時間</label>
+                    <input class="fc time-fc" type="text" inputmode="numeric" maxlength="5"
+                        placeholder="HH:MM" id="batch-start-time" oninput="fmtTimeInput(this)" /></div>
+                <div style="align-self:flex-end;padding-bottom:10px;color:var(--text-m)">～</div>
+                <div style="flex:1;min-width:130px"><label>結束時間（可留空）</label>
+                    <input class="fc time-fc" type="text" inputmode="numeric" maxlength="5"
+                        placeholder="HH:MM" id="batch-end-time" oninput="fmtTimeInput(this)" /></div>
+            </div>
+            <button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="slotBatchAdd()">套用</button>
+        </div>
+        <div class="form-group" style="margin-top:16px">
+            <label>🎨 顏色判定設定</label>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+                <span style="font-size:13px;color:var(--text-m)">幾人「不行」才顯示紅色：</span>
+                <div class="btn-group">
+                    ${[1,2,3,4].map(v=>`<button class="btn btn-sm no-thresh-btn ${noThresh===v?'btn-primary':'btn-secondary'}" data-val="${v}" onclick="setNoThresh(${v})">${v}人</button>`).join('')}
+                </div>
+            </div>
+            <label class="checkbox-label">
+                <input type="checkbox" id="f-maybe-as-no" ${maybeAsNo?'checked':''}> 將「大概可以」視為「不行」計算
+            </label>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-lg" onclick="doSubmitEdit()">儲存修改 ✓</button>
+            <button class="btn btn-secondary" onclick="cancelEdit()">取消</button>
+        </div>
+    </div>`;
+}
 
 // ═══════════════════════════════════════════════════════════
 //  GOOGLE CALENDAR
@@ -991,6 +1254,6 @@ function fmtDate(ds) {
 }
 
 // ── Expose globals ─────────────────────────────────────────
-Object.assign(window, { S, go: window.go, doSubmitCreate, doSubmitVote, doSignOut });
+Object.assign(window, { S, go: window.go, doSubmitCreate, doSubmitVote, doSubmitEdit, doSignOut });
 
 init();
