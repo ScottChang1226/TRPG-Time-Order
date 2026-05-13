@@ -1052,6 +1052,7 @@ function vResults() {
         ? `<div class="alert alert-warning">⚠️ <strong>注意：以下重疊時段均標記為約團成功，請確認是否正確：</strong><br>${overlapSuccessWarnings.map(s=>`・${s}`).join('<br>')}</div>`
         : '';
 
+    const scored = poll.slots.map(slot => {
         let yes=0,maybe=0,no=0;
         const yN=[],mN=[],xN=[];
         entries.forEach(({name,votes,authName}) => {
