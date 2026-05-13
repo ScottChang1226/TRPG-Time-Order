@@ -388,3 +388,41 @@ a{color:var(--primary-d);}
 .vote-slot-scroll::-webkit-scrollbar-track{background:var(--neutral-l);border-radius:3px;}
 .vote-slot-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
 .vote-slot-scroll::-webkit-scrollbar-thumb:hover{background:var(--text-m);}
+
+/* ── Results tab bar ── */
+.results-tab-bar{display:flex;border-bottom:2px solid var(--border);margin-bottom:16px;}
+.results-tab{padding:8px 18px;font-size:14px;font-weight:600;cursor:pointer;border:none;background:none;color:var(--text-m);border-bottom:3px solid transparent;margin-bottom:-2px;transition:color .15s,border-color .15s;font-family:inherit;}
+.results-tab.active{color:var(--primary);border-bottom-color:var(--primary);}
+.results-tab:hover:not(.active){color:var(--text);}
+
+/* ── Outcome banners ── */
+.outcome-banner{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:var(--r-sm);font-weight:700;font-size:12px;margin-top:6px;}
+.outcome-success{background:#15803d;color:#fff;}
+.outcome-failure{background:#b91c1c;color:#fff;}
+.outcome-pending{background:var(--neutral-l);color:var(--text-m);border:1px solid var(--border);}
+:root.dark .outcome-pending{background:#2a2d30;border-color:#3a3d40;}
+/* Result slot left border accent */
+.outcome-slot-success{border-left:4px solid #15803d !important;}
+.outcome-slot-failure{border-left:4px solid #b91c1c !important;}
+
+/* ── Outcome set buttons (creator) ── */
+.outcome-set-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.outcome-btn{padding:3px 10px;border-radius:var(--r-sm);font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid transparent;background:none;font-family:inherit;transition:all .15s;}
+.outcome-btn-success{background:var(--success-l);color:#15803d;border-color:#86efac;}
+.outcome-btn-success.active{background:#15803d;color:#fff;border-color:#15803d;}
+.outcome-btn-failure{background:var(--danger-l);color:#b91c1c;border-color:#fca5a5;}
+.outcome-btn-failure.active{background:#b91c1c;color:#fff;border-color:#b91c1c;}
+:root.dark .outcome-btn-success{background:#052e16;color:#4ade80;border-color:#166534;}
+:root.dark .outcome-btn-success.active{background:#166534;color:#bbf7d0;border-color:#166534;}
+:root.dark .outcome-btn-failure{background:#450a0a;color:#f87171;border-color:#991b1b;}
+:root.dark .outcome-btn-failure.active{background:#991b1b;color:#fecaca;border-color:#991b1b;}
+
+/* ── Record view ── */
+.record-slot{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:var(--r-sm);border:1.5px solid var(--border);border-left-width:4px;margin-bottom:8px;background:var(--card-bg);}
+.record-outcome-success{border-left-color:#15803d;}
+.record-outcome-failure{border-left-color:#b91c1c;}
+.record-outcome-pending{border-left-color:var(--border);}
+.record-slot-left{flex:1;min-width:0;}
+.record-slot-date{font-weight:700;font-size:14px;color:var(--text);margin-bottom:6px;}
+.record-slot-summary{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.record-slot-outcome{flex-shrink:0;padding-top:2px;}

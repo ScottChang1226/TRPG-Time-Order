@@ -37,6 +37,7 @@ const S = {
     editMode: false,
     voteNameDraft: undefined,
     voteWeekIdx: 0,
+    resultsTab: 'overview',
     darkMode: localStorage.getItem('darkMode') === '1',
 };
 
@@ -643,6 +644,7 @@ async function loadPoll() {
         S.votes = { ...(S.poll.responses?.[S.user.uid] || {}) };
         S.voteNameDraft = undefined;
         S.voteWeekIdx = 0;
+        S.resultsTab = 'overview';
         history.replaceState({}, '', location.pathname);
         go('vote');
     } catch(e) { errInContent(e.message); }
@@ -894,6 +896,65 @@ window.doLeavePoll = async function() {
     } catch(e) { alert('操作失敗：'+e.message); }
 };
 
+// ── Record tab renderer ───────────────────────────────────
+function vResultsRecord(scored, outcomes, todayISO, isCreator, n) {
+    const poll = S.poll;
+    const pastSlots = scored
+        .filter(s => s.slot.date && s.slot.date <= todayISO)
+        .sort((a, b) => a.slot.date.localeCompare(b.slot.date));
+
+    if (pastSlots.length === 0) {
+        return `<p style="color:var(--text-m);text-align:center;padding:32px 0;font-size:14px">尚無過去的時段記錄</p>`;
+    }
+
+    return pastSlots.map(s => {
+        const outcome = outcomes[s.slot.id];
+        const outcomeBadge = outcome === 'success'
+            ? `<span class="outcome-banner outcome-success">🏆 約團成功</span>`
+            : outcome === 'failure'
+            ? `<span class="outcome-banner outcome-failure">💔 約團失敗</span>`
+            : `<span class="outcome-banner outcome-pending">⬜ 尚未確認</span>`;
+
+        const summary = n > 0
+            ? `<span class="ptag ptag-yes">✅ ${s.yes}</span><span class="ptag ptag-maybe">🟡 ${s.maybe}</span><span class="ptag ptag-no">❌ ${s.no}</span>`
+            : `<span style="color:var(--text-m);font-size:12px">尚無人填寫</span>`;
+
+        const outcomeSetRow = isCreator ? `
+            <div class="outcome-set-row" style="margin-top:8px">
+                <span style="font-size:11px;color:var(--text-m)">標記：</span>
+                <button class="outcome-btn outcome-btn-success${outcome==='success'?' active':''}" onclick="doSetOutcome('${s.slot.id}','success')">🏆 成功</button>
+                <button class="outcome-btn outcome-btn-failure${outcome==='failure'?' active':''}" onclick="doSetOutcome('${s.slot.id}','failure')">💔 失敗</button>
+            </div>` : '';
+
+        return `<div class="record-slot record-outcome-${outcome||'pending'}">
+            <div class="record-slot-left">
+                <div class="record-slot-date">${h(fmtSlot(s.slot))}</div>
+                <div class="record-slot-summary">${summary}</div>
+                ${outcomeSetRow}
+            </div>
+            <div class="record-slot-outcome">${outcomeBadge}</div>
+        </div>`;
+    }).join('');
+}
+
+// ── Outcome & tab helpers ─────────────────────────────────
+window.doSetOutcome = async function(slotId, status) {
+    if (!S.poll || S.poll.creatorUid !== S.user.uid) return;
+    try {
+        const ref = doc(db, 'polls', S.pollId);
+        if ((S.poll.outcomes || {})[slotId] === status) {
+            await updateDoc(ref, { [`outcomes.${slotId}`]: deleteField() });
+        } else {
+            await updateDoc(ref, { [`outcomes.${slotId}`]: status });
+        }
+    } catch(e) { alert('更新失敗：' + e.message); }
+};
+window.switchResultsTab = function(tab) {
+    S.resultsTab = tab;
+    const c = document.getElementById('content');
+    if (c) c.innerHTML = vResults();
+};
+
 // ── Live results watcher ───────────────────────────────────
 function listenResults() {
     const content = document.getElementById('content');
@@ -941,6 +1002,8 @@ function vResults() {
     }));
     const n = entries.length;
     const isCreator = poll.creatorUid === S.user.uid;
+    const outcomes = poll.outcomes || {};
+    const todayISO = localISO(new Date());
 
     const scored = poll.slots.map(slot => {
         let yes=0,maybe=0,no=0;
@@ -957,43 +1020,15 @@ function vResults() {
         return {slot,yes,maybe,no,score,yN,mN,xN,heat};
     }).sort((a,b)=>b.score-a.score);
 
-    const best = scored.filter(s=>s.heat==='great'||s.heat==='good');
+    const tab = S.resultsTab || 'overview';
+    const tabBar = `<div class="results-tab-bar">
+        <button class="results-tab${tab==='overview'?' active':''}" onclick="switchResultsTab('overview')">📊 結果總覽</button>
+        <button class="results-tab${tab==='record'?' active':''}" onclick="switchResultsTab('record')">📅 約團記錄</button>
+    </div>`;
 
-    const slotsHtml = scored.map((s,i)=>{
-        const l = getSlotLabel(s, n);
-        const yp=n>0?(s.yes/n*100).toFixed(0):0;
-        const mp=n>0?(s.maybe/n*100).toFixed(0):0;
-        const tags=[
-            ...s.yN.map(nm=>`<span class="ptag ptag-yes">✅ ${h(nm)}</span>`),
-            ...s.mN.map(nm=>`<span class="ptag ptag-maybe">🟡 ${h(nm)}</span>`),
-            ...s.xN.map(nm=>`<span class="ptag ptag-no">❌ ${h(nm)}</span>`),
-        ].join('');
-        const gcData = JSON.stringify({t:poll.title,s:s.slot,d:poll.desc||''}).replace(/'/g,'&#39;');
-        const gcBtn=`<button class="btn btn-sm" style="background:#4285F4;color:#fff;gap:4px" onclick='addGC(${gcData})'>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/></svg>
-            加入 Google 日曆</button>`;
-        return `<div class="result-slot heat-${s.heat}" id="rs-${s.slot.date||i}">
-            <div class="res-header">
-                <div>
-                    <div class="res-title">${h(fmtSlot(s.slot))}</div>
-                    <span class="sc-badge ${l.c}" style="margin-top:5px;display:inline-block">${l.t}</span>
-                </div>
-                <div style="margin-top:2px">${gcBtn}</div>
-            </div>
-            ${n>0?`
-            <div class="bar-row"><span style="width:52px">✅ ${s.yes}人</span>
-                <div class="bar-out"><div class="bar-in" style="width:${yp}%;background:var(--success)"></div></div>
-            </div>
-            <div class="bar-row"><span style="width:52px">🟡 ${s.maybe}人</span>
-                <div class="bar-out"><div class="bar-in" style="width:${mp}%;background:var(--warning)"></div></div>
-            </div>`:''}
-            ${tags?`<div class="tag-list">${tags}</div>`:''}
-        </div>`;
-    }).join('');
-
-    const banner = best.length>0
-        ? `<div class="alert alert-success">🌟 <strong>所有人都有空的時間：</strong>${best.map(s=>h(fmtSlot(s.slot))).join('、')}</div>`
-        : (n>0?`<div class="alert alert-warning">⚠️ 目前沒有所有人都完全空閒的時間，請參考下方排序</div>`:'');
+    const creatorBtns = isCreator && !poll.deleted ? `
+        <button class="btn btn-outline btn-sm" onclick="startEditPoll()">✏️ 編輯活動</button>
+        <button class="btn btn-danger btn-sm" onclick="doDeletePoll()">🗑️ 刪除活動</button>` : '';
 
     const deletedBanner = poll.deleted ? `<div class="alert alert-error">⚠️ 此活動已被刪除，資料僅供查閱與下載，無法再填寫。</div>` : '';
     const dlBtns = `
@@ -1001,11 +1036,7 @@ function vResults() {
         <button class="btn btn-secondary btn-sm" onclick="dlXLSX()">📊 下載 Excel</button>
         <button class="btn btn-secondary btn-sm" onclick="dlCSV()">📄 下載 CSV</button>`;
 
-    const creatorBtns = isCreator && !poll.deleted ? `
-        <button class="btn btn-outline btn-sm" onclick="startEditPoll()">✏️ 編輯活動</button>
-        <button class="btn btn-danger btn-sm" onclick="doDeletePoll()">🗑️ 刪除活動</button>` : '';
-
-    return `<div class="card">
+    const header = `<div class="card">
         <button class="nav-back" onclick="go('dashboard')">← 返回首頁</button>
         <div class="card-title" style="margin-bottom:8px">${h(poll.title)}</div>
         <div class="vote-action-bar">
@@ -1020,7 +1051,72 @@ function vResults() {
             </div>
         </div>
         ${deletedBanner}
-        ${banner}
+        ${tabBar}`;
+
+    // ── Record tab ──
+    if (tab === 'record') {
+        return header + vResultsRecord(scored, outcomes, todayISO, isCreator, n) + `
+        <div class="divider"></div>
+        <div class="btn-group">${dlBtns}</div>
+    </div>`;
+    }
+
+    // ── Overview tab ──
+    const best = scored.filter(s=>s.heat==='great'||s.heat==='good');
+    const banner = best.length>0
+        ? `<div class="alert alert-success">🌟 <strong>所有人都有空的時間：</strong>${best.map(s=>h(fmtSlot(s.slot))).join('、')}</div>`
+        : (n>0?`<div class="alert alert-warning">⚠️ 目前沒有所有人都完全空閒的時間，請參考下方排序</div>`:'');
+
+    const slotsHtml = scored.map((s,i)=>{
+        const l = getSlotLabel(s, n);
+        const yp=n>0?(s.yes/n*100).toFixed(0):0;
+        const mp=n>0?(s.maybe/n*100).toFixed(0):0;
+        const tags=[
+            ...s.yN.map(nm=>`<span class="ptag ptag-yes">✅ ${h(nm)}</span>`),
+            ...s.mN.map(nm=>`<span class="ptag ptag-maybe">🟡 ${h(nm)}</span>`),
+            ...s.xN.map(nm=>`<span class="ptag ptag-no">❌ ${h(nm)}</span>`),
+        ].join('');
+        const gcData = JSON.stringify({t:poll.title,s:s.slot,d:poll.desc||''}).replace(/'/g,'&#39;');
+        const gcBtn=`<button class="btn btn-sm" style="background:#4285F4;color:#fff;gap:4px" onclick='addGC(${gcData})'>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/></svg>
+            加入 Google 日曆</button>`;
+
+        const outcome = outcomes[s.slot.id];
+        const isPast = s.slot.date && s.slot.date <= todayISO;
+        const outcomeBadge = outcome === 'success'
+            ? `<span class="outcome-banner outcome-success">🏆 約團成功</span>`
+            : outcome === 'failure'
+            ? `<span class="outcome-banner outcome-failure">💔 約團失敗</span>`
+            : '';
+        const outcomeSetRow = (isCreator && isPast) ? `
+            <div class="outcome-set-row">
+                <span style="font-size:11px;color:var(--text-m)">標記結果：</span>
+                <button class="outcome-btn outcome-btn-success${outcome==='success'?' active':''}" onclick="doSetOutcome('${s.slot.id}','success')">🏆 成功</button>
+                <button class="outcome-btn outcome-btn-failure${outcome==='failure'?' active':''}" onclick="doSetOutcome('${s.slot.id}','failure')">💔 失敗</button>
+            </div>` : '';
+
+        return `<div class="result-slot heat-${s.heat}${outcome?' outcome-slot-'+outcome:''}" id="rs-${s.slot.date||i}">
+            <div class="res-header">
+                <div>
+                    <div class="res-title">${h(fmtSlot(s.slot))}</div>
+                    <span class="sc-badge ${l.c}" style="margin-top:5px;display:inline-block">${l.t}</span>
+                    ${outcomeBadge}
+                </div>
+                <div style="margin-top:2px">${gcBtn}</div>
+            </div>
+            ${n>0?`
+            <div class="bar-row"><span style="width:52px">✅ ${s.yes}人</span>
+                <div class="bar-out"><div class="bar-in" style="width:${yp}%;background:var(--success)"></div></div>
+            </div>
+            <div class="bar-row"><span style="width:52px">🟡 ${s.maybe}人</span>
+                <div class="bar-out"><div class="bar-in" style="width:${mp}%;background:var(--warning)"></div></div>
+            </div>`:''}
+            ${tags?`<div class="tag-list">${tags}</div>`:''}
+            ${outcomeSetRow}
+        </div>`;
+    }).join('');
+
+    return header + banner + `
         ${n>0 ? vCalendar(scored) : ''}
         <div style="display:flex;align-items:center;justify-content:space-between;margin:12px 0 8px;flex-wrap:wrap;gap:8px">
             <p style="font-size:13px;color:var(--text-m);margin:0">📋 詳細列表（依可行性排序）<span class="live-dot" title="即時更新"></span></p>
@@ -1359,6 +1455,6 @@ function localISO(d) {
 }
 
 // ── Expose globals ─────────────────────────────────────────
-Object.assign(window, { S, go: window.go, doSubmitCreate, doSubmitVote, doSubmitEdit, doSignOut });
+Object.assign(window, { S, go: window.go, doSubmitCreate, doSubmitVote, doSubmitEdit, doSignOut, doSetOutcome: window.doSetOutcome, switchResultsTab: window.switchResultsTab });
 
 init();
