@@ -1,0 +1,5 @@
+# 忽略 Firebase 設定檔（含 API Key）
+firebase-config.js
+
+# 但保留範本供參考
+!firebase-config.example.js

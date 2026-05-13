@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📅 時間協調工具</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+<style>
+/* ── Variables ── */
+:root {
+  --primary:#6366f1; --primary-d:#4f46e5; --primary-l:#e0e7ff;
+  --success:#22c55e; --success-l:#dcfce7;
+  --warning:#f59e0b; --warning-l:#fef3c7;
+  --danger:#ef4444;  --danger-l:#fee2e2;
+  --neutral:#94a3b8; --neutral-l:#f1f5f9;
+  --text:#1e293b; --text-m:#64748b;
+  --border:#e2e8f0; --white:#ffffff;
+  --r:12px; --r-sm:8px;
+  --shadow:0 4px 16px rgba(0,0,0,.12);
+  --sidebar-w:260px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft JhengHei','PingFang TC',sans-serif;
+     background:#f8fafc;color:var(--text);min-height:100vh;overflow-x:hidden;}
+
+/* ── Layout ── */
+#layout{display:flex;min-height:100vh;}
+
+/* ── Sidebar ── */
+#sidebar{
+  width:var(--sidebar-w);min-height:100vh;background:#1e1b4b;color:#c7d2fe;
+  display:flex;flex-direction:column;transition:width .25s,transform .25s;
+  flex-shrink:0;position:relative;z-index:50;
+}
+#sidebar.collapsed{width:56px;}
+#sidebar.collapsed .sb-label{display:none;}
+#sidebar.collapsed .sb-section-title{opacity:0;pointer-events:none;}
+#sidebar.collapsed #sidebar-logo span{display:none;}
+.sb-toggle{
+  position:absolute;top:14px;right:-14px;
+  width:28px;height:28px;background:var(--white);border-radius:50%;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);border:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--primary-d);font-size:13px;z-index:60;
+  transition:transform .25s;
+}
+#sidebar-logo{
+  padding:18px 14px 14px;display:flex;align-items:center;gap:10px;
+  border-bottom:1px solid rgba(255,255,255,.1);flex-shrink:0;
+}
+#sidebar-logo .logo-icon{font-size:24px;flex-shrink:0;}
+#sidebar-logo span{font-size:15px;font-weight:700;color:#e0e7ff;white-space:nowrap;}
+.sb-section-title{
+  padding:14px 14px 4px;font-size:10px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:#818cf8;opacity:1;transition:opacity .2s;white-space:nowrap;
+}
+.sb-item{
+  display:flex;align-items:center;gap:10px;padding:9px 14px;
+  cursor:pointer;border-radius:8px;margin:2px 8px;
+  transition:background .15s,color .15s;white-space:nowrap;overflow:hidden;
+  border:none;background:transparent;color:#c7d2fe;font-family:inherit;font-size:14px;
+  text-align:left;width:calc(100% - 16px);
+}
+.sb-item:hover{background:rgba(255,255,255,.1);color:#fff;}
+.sb-item.active{background:var(--primary);color:#fff;}
+.sb-item .sb-icon{font-size:17px;flex-shrink:0;}
+.sb-spacer{flex:1;}
+.sb-user{
+  padding:12px 14px;border-top:1px solid rgba(255,255,255,.1);
+  display:flex;align-items:center;gap:10px;overflow:hidden;
+}
+.sb-avatar{
+  width:34px;height:34px;border-radius:50%;background:var(--primary);
+  display:flex;align-items:center;justify-content:center;
+  font-size:14px;font-weight:700;color:#fff;flex-shrink:0;
+  overflow:hidden;
+}
+.sb-avatar img{width:100%;height:100%;object-fit:cover;}
+.sb-user-info{overflow:hidden;}
+.sb-user-name{font-size:13px;font-weight:600;color:#e0e7ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sb-user-email{font-size:11px;color:#818cf8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+/* ── Main ── */
+#main{flex:1;display:flex;flex-direction:column;min-width:0;}
+#topbar{
+  background:var(--white);border-bottom:1px solid var(--border);
+  padding:0 24px;height:56px;display:flex;align-items:center;gap:12px;
+  position:sticky;top:0;z-index:40;
+}
+#topbar h1{font-size:17px;font-weight:700;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#content{padding:28px 24px;max-width:760px;}
+@media(max-width:680px){
+  #sidebar{position:fixed;top:0;left:0;height:100%;transform:translateX(0);z-index:200;}
+  #sidebar.collapsed{transform:translateX(-100%);}
+  #content{padding:16px;}
+  #topbar{padding:0 14px;}
+}
+
+/* ── Cards ── */
+.card{background:var(--white);border-radius:var(--r);box-shadow:var(--shadow);padding:28px;margin-bottom:20px;}
+.card-title{font-size:18px;font-weight:700;margin-bottom:4px;}
+.card-sub{font-size:13px;color:var(--text-m);margin-bottom:20px;}
+
+/* ── Auth pages (centred) ── */
+#auth-wrap{
+  min-height:100vh;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,#667eea,#764ba2);padding:20px;
+}
+.auth-card{background:var(--white);border-radius:var(--r);padding:36px 32px;width:100%;max-width:400px;box-shadow:var(--shadow);}
+.auth-card h2{font-size:22px;font-weight:800;margin-bottom:4px;}
+.auth-card .sub{font-size:13px;color:var(--text-m);margin-bottom:24px;}
+
+/* ── Buttons ── */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:9px 18px;border:none;border-radius:var(--r-sm);cursor:pointer;
+  font-size:14px;font-weight:600;transition:all .15s;font-family:inherit;
+  text-decoration:none;white-space:nowrap;
+}
+.btn:hover{filter:brightness(1.08);transform:translateY(-1px);}
+.btn:active{transform:translateY(0);filter:none;}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none;filter:none;}
+.btn-primary{background:var(--primary);color:#fff;}
+.btn-google{background:#fff;color:#3c4043;border:1px solid var(--border);}
+.btn-google:hover{background:#f8f9fa;filter:none;}
+.btn-success{background:var(--success);color:#fff;}
+.btn-outline{background:transparent;color:var(--primary);border:2px solid var(--primary);}
+.btn-outline:hover{background:var(--primary-l);filter:none;}
+.btn-danger{background:var(--danger);color:#fff;}
+.btn-secondary{background:var(--neutral-l);color:var(--text);}
+.btn-secondary:hover{background:var(--border);filter:none;}
+.btn-sm{padding:6px 12px;font-size:12px;}
+.btn-lg{padding:12px 28px;font-size:15px;}
+.btn-block{width:100%;}
+.btn-group{display:flex;gap:8px;flex-wrap:wrap;}
+
+/* ── Forms ── */
+.form-group{margin-bottom:18px;}
+label{display:block;margin-bottom:5px;font-size:13px;font-weight:600;color:var(--text);}
+.fc{
+  width:100%;padding:10px 13px;border:2px solid var(--border);border-radius:var(--r-sm);
+  font-size:14px;color:var(--text);background:var(--white);transition:border-color .15s,box-shadow .15s;
+  font-family:inherit;
+}
+.fc:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-l);}
+.or-divider{display:flex;align-items:center;gap:10px;margin:18px 0;color:var(--text-m);font-size:13px;}
+.or-divider::before,.or-divider::after{content:'';flex:1;height:1px;background:var(--border);}
+
+/* ── Activity list ── */
+.activity-list{display:grid;gap:12px;}
+.act-card{
+  background:var(--white);border:2px solid var(--border);border-radius:var(--r);
+  padding:16px 18px;cursor:pointer;transition:border-color .15s,box-shadow .15s;
+  display:flex;flex-direction:column;gap:6px;
+}
+.act-card:hover{border-color:#a5b4fc;box-shadow:0 4px 12px rgba(99,102,241,.12);}
+.act-card h3{font-size:15px;font-weight:700;}
+.act-card .meta{font-size:12px;color:var(--text-m);}
+.act-badge{
+  display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;
+}
+.badge-created{background:var(--primary-l);color:var(--primary-d);}
+.badge-joined{background:var(--success-l);color:#15803d;}
+
+/* ── Slot input ── */
+.slot-row{display:grid;grid-template-columns:1fr 100px 100px 32px;gap:8px;align-items:center;margin-bottom:8px;}
+@media(max-width:520px){
+  .slot-row{grid-template-columns:1fr 1fr;}
+  .slot-row input:first-child{grid-column:1/-1;}
+  .slot-row .remove-btn{grid-column:1/-1;}
+}
+
+/* ── Avail selector ── */
+.slot-card{border:2px solid var(--border);border-radius:var(--r-sm);padding:13px;margin-bottom:10px;}
+.slot-card-title{font-weight:600;font-size:14px;margin-bottom:9px;}
+.avail-sel{display:flex;gap:7px;}
+.avail-btn{
+  flex:1;padding:8px 5px;border:2px solid var(--border);border-radius:var(--r-sm);
+  background:transparent;cursor:pointer;font-size:13px;font-weight:600;
+  text-align:center;font-family:inherit;transition:all .12s;
+}
+.avail-btn:hover{background:var(--neutral-l);}
+.avail-btn.sel-yes{background:var(--success-l);border-color:var(--success);color:#15803d;}
+.avail-btn.sel-maybe{background:var(--warning-l);border-color:var(--warning);color:#b45309;}
+.avail-btn.sel-no{background:var(--danger-l);border-color:var(--danger);color:#b91c1c;}
+
+/* ── Results ── */
+.result-slot{
+  border-radius:var(--r-sm);padding:14px 14px 14px 18px;
+  border:2px solid var(--border);position:relative;overflow:hidden;
+  transition:box-shadow .15s;margin-bottom:10px;
+}
+.result-slot:hover{box-shadow:0 4px 12px rgba(0,0,0,.08);}
+.result-slot::before{content:'';position:absolute;left:0;top:0;bottom:0;width:5px;border-radius:4px 0 0 4px;}
+.heat-great{background:#f0fdf4;border-color:#86efac;}.heat-great::before{background:var(--success);}
+.heat-good{background:#f7fffe;border-color:#a7f3d0;}.heat-good::before{background:#34d399;}
+.heat-ok{background:#fffbeb;border-color:#fde68a;}.heat-ok::before{background:var(--warning);}
+.heat-poor{background:#fff7f7;border-color:#fecaca;}.heat-poor::before{background:var(--danger);}
+.res-header{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;}
+.res-title{font-weight:700;font-size:15px;}
+.sc-badge{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;}
+.sc-great{background:var(--success-l);color:#15803d;}
+.sc-good{background:#d1fae5;color:#065f46;}
+.sc-ok{background:var(--warning-l);color:#92400e;}
+.sc-poor{background:var(--danger-l);color:#991b1b;}
+.bar-row{display:flex;align-items:center;gap:8px;margin-top:5px;font-size:12px;color:var(--text-m);}
+.bar-out{flex:1;background:var(--neutral-l);border-radius:99px;height:7px;overflow:hidden;}
+.bar-in{height:100%;border-radius:99px;transition:width .3s;}
+.tag-list{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px;}
+.ptag{display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:12px;font-size:12px;font-weight:500;}
+.ptag-yes{background:var(--success-l);color:#15803d;}
+.ptag-maybe{background:var(--warning-l);color:#b45309;}
+.ptag-no{background:var(--danger-l);color:#b91c1c;}
+
+/* ── Misc ── */
+.divider{height:1px;background:var(--border);margin:18px 0;}
+.alert{padding:12px 16px;border-radius:var(--r-sm);font-size:14px;margin-bottom:14px;line-height:1.5;}
+.alert-info{background:var(--primary-l);color:var(--primary-d);border:1px solid #c7d2fe;}
+.alert-success{background:var(--success-l);color:#15803d;border:1px solid #86efac;}
+.alert-warning{background:var(--warning-l);color:#92400e;border:1px solid #fde68a;}
+.alert-error{background:var(--danger-l);color:#b91c1c;border:1px solid #fca5a5;}
+.copy-row{display:flex;gap:8px;align-items:center;}
+.copy-input{flex:1;padding:9px 12px;border:2px solid var(--border);border-radius:var(--r-sm);
+  font-size:12px;background:var(--neutral-l);color:var(--text);font-family:monospace;}
+.loading{text-align:center;padding:60px 20px;color:var(--text-m);font-size:15px;}
+.spin{display:block;width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--primary);
+  border-radius:50%;margin:12px auto 0;animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.live-dot{display:inline-block;width:8px;height:8px;background:var(--success);border-radius:50%;
+  margin-left:6px;vertical-align:middle;animation:pulse 1.5s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.85)}}
+.empty-state{text-align:center;padding:48px 20px;color:var(--text-m);}
+.empty-state .emoji{font-size:48px;display:block;margin-bottom:12px;}
+code{font-family:'Consolas',monospace;background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:.9em;}
+a{color:var(--primary-d);}
+.config-warn{background:#fef3c7;border:2px solid #fbbf24;border-radius:var(--r);padding:16px 20px;
+  margin-bottom:20px;font-size:14px;color:#92400e;line-height:1.7;}
+.config-warn strong{display:block;font-size:15px;margin-bottom:6px;}
+.nav-back{display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--text-m);
+  cursor:pointer;background:none;border:none;padding:4px 0;margin-bottom:16px;
+  transition:color .15s;font-family:inherit;}
+.nav-back:hover{color:var(--primary);}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:190;display:none;}
+.overlay.show{display:block;}
+</style>
+</head>
+<body>
+
+<!-- Mobile overlay for sidebar -->
+<div id="overlay" class="overlay" onclick="toggleSidebar()"></div>
+
+<div id="root"></div>
+
+<script type="module">
+import { initializeApp }         from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot,
+         collection, query, where, getDocs, arrayUnion }
+         from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword,
+         createUserWithEmailAndPassword, signOut, GoogleAuthProvider,
+         signInWithPopup, updateProfile }
+         from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+import { firebaseConfig as FIREBASE_CONFIG } from './firebase-config.js';
+
+const CONFIGURED = FIREBASE_CONFIG.projectId !== "YOUR_PROJECT_ID";
+let db = null, auth = null, gProvider = null;
+if (CONFIGURED) {
+    const app = initializeApp(FIREBASE_CONFIG);
+    db = getFirestore(app);
+    auth = getAuth(app);
+    gProvider = new GoogleAuthProvider();
+}
+
+// ── State ──────────────────────────────────────────────────
+const S = {
+    user: null,           // Firebase user object
+    view: 'loading',      // current page
+    pollId: null,
+    poll: null,
+    votes: {},
+    slots: [mkSlot()],
+    draft: null,
+    unsub: null,
+    sidebarOpen: true,
+    myPolls: [],          // created by me
+    joinedPolls: [],      // participated
+    pollsLoaded: false,
+    authError: '',
+};
+
+function mkSlot() { return { id: uid(), date: '', start: '', end: '' }; }
+function uid()    { return Math.random().toString(36).slice(2, 11); }
+function h(s)     {
+    if (s == null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ── Router ─────────────────────────────────────────────────
+window.toggleSidebar = function() {
+    S.sidebarOpen = !S.sidebarOpen;
+    applyLayout();
+};
+function applyLayout() {
+    const sb  = document.getElementById('sidebar');
+    const ov  = document.getElementById('overlay');
+    if (!sb) return;
+    const mobile = window.innerWidth <= 680;
+    if (mobile) {
+        sb.classList.toggle('collapsed', !S.sidebarOpen);
+        ov && (ov.style.display = S.sidebarOpen ? 'block' : 'none');
+    } else {
+        sb.classList.toggle('collapsed', !S.sidebarOpen);
+        ov && (ov.style.display = 'none');
+    }
+    const toggleBtn = document.getElementById('sb-toggle-btn');
+    if (toggleBtn) toggleBtn.textContent = S.sidebarOpen ? '◀' : '▶';
+}
+
+function go(view, extra = {}) {
+    if (S.unsub) { S.unsub(); S.unsub = null; }
+    Object.assign(S, extra);
+    S.view = view;
+    paint();
+}
+
+// ── Auth guard ─────────────────────────────────────────────
+function init() {
+    const root = document.getElementById('root');
+    root.innerHTML = '<div class="loading">載入中…<span class="spin"></span></div>';
+    if (!CONFIGURED) { go('config'); return; }
+    onAuthStateChanged(auth, user => {
+        S.user = user;
+        if (!user) { go('auth-login'); return; }
+        if (!S.pollsLoaded) loadMyPolls();
+        // check if arriving via ?poll= link
+        const p = new URLSearchParams(location.search).get('poll');
+        if (p) { S.pollId = p.toUpperCase(); go('poll-loading'); }
+        else if (S.view === 'loading' || S.view === 'auth-login' || S.view === 'auth-register') {
+            go('dashboard');
+        } else paint();
+    });
+}
+
+// ── Load user's polls ──────────────────────────────────────
+async function loadMyPolls() {
+    S.pollsLoaded = true;
+    try {
+        const [cSnap, jSnap] = await Promise.all([
+            getDocs(query(collection(db,'polls'), where('creatorUid','==', S.user.uid))),
+            getDocs(query(collection(db,'userPolls'), where('uid','==', S.user.uid)))
+        ]);
+        S.myPolls = cSnap.docs.map(d => d.data());
+        const joinedIds = jSnap.docs.map(d => d.data().pollId)
+            .filter(id => !S.myPolls.find(p => p.id === id));
+        if (joinedIds.length) {
+            const fetches = await Promise.all(joinedIds.map(id => getDoc(doc(db,'polls',id))));
+            S.joinedPolls = fetches.filter(d => d.exists()).map(d => d.data());
+        } else S.joinedPolls = [];
+        if (S.view === 'dashboard' || S.view === 'my-polls' || S.view === 'joined-polls') paint();
+    } catch(e) { console.error(e); }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PAINT
+// ═══════════════════════════════════════════════════════════
+function paint() {
+    const root = document.getElementById('root');
+    if (!S.user || S.view === 'auth-login' || S.view === 'auth-register' || S.view === 'config') {
+        root.innerHTML = noAuthPage();
+        attachAuthHandlers();
+        return;
+    }
+    root.innerHTML = shellHTML();
+    applyLayout();
+    attachShellHandlers();
+    const content = document.getElementById('content');
+    switch (S.view) {
+        case 'dashboard':    content.innerHTML = vDashboard();   break;
+        case 'my-polls':     content.innerHTML = vPollList('my'); break;
+        case 'joined-polls': content.innerHTML = vPollList('joined'); break;
+        case 'create':       content.innerHTML = vCreate();      break;
+        case 'created':      content.innerHTML = vCreated();     break;
+        case 'poll-loading': loadPoll(); break;
+        case 'vote':         content.innerHTML = vVote();        break;
+        case 'live':         content.innerHTML = vResults();     break;
+        default: content.innerHTML = vDashboard();
+    }
+    setTopbarTitle();
+}
+
+function setTopbarTitle() {
+    const el = document.getElementById('topbar-title');
+    if (!el) return;
+    const map = {
+        dashboard: '首頁', 'my-polls': '我建立的活動',
+        'joined-polls': '我參加過的活動', create: '建立新活動',
+        created: '建立成功', vote: S.poll?.title || '填寫時間',
+        live: (S.poll?.title || '活動結果') + ' — 結果',
+        'poll-loading': '載入中…',
+    };
+    el.textContent = map[S.view] || '';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SHELL (Sidebar + Topbar)
+// ═══════════════════════════════════════════════════════════
+function shellHTML() {
+    const u = S.user;
+    const avatar = u.photoURL
+        ? `<img src="${h(u.photoURL)}" alt="avatar" referrerpolicy="no-referrer">`
+        : (u.displayName || u.email || '?')[0].toUpperCase();
+    const avatarEl = u.photoURL ? `<div class="sb-avatar"><img src="${h(u.photoURL)}" referrerpolicy="no-referrer"></div>`
+        : `<div class="sb-avatar">${h((u.displayName||u.email||'?')[0].toUpperCase())}</div>`;
+
+    const navItem = (view, icon, label) => {
+        const active = S.view === view ? ' active' : '';
+        return `<button class="sb-item${active}" onclick="go('${view}')">
+            <span class="sb-icon">${icon}</span>
+            <span class="sb-label">${label}</span>
+        </button>`;
+    };
+
+    return `<div id="layout">
+      <nav id="sidebar">
+        <button class="sb-toggle" id="sb-toggle-btn" onclick="toggleSidebar()">◀</button>
+        <div id="sidebar-logo">
+            <span class="logo-icon">📅</span>
+            <span>時間協調工具</span>
+        </div>
+        <div class="sb-section-title">功能</div>
+        ${navItem('dashboard','🏠','首頁')}
+        ${navItem('create','✨','建立新活動')}
+        <div class="sb-section-title">我的活動</div>
+        ${navItem('my-polls','📋','我建立的活動')}
+        ${navItem('joined-polls','👥','我參加過的活動')}
+        <div class="sb-spacer"></div>
+        <div class="sb-user">
+            ${avatarEl}
+            <div class="sb-user-info">
+                <div class="sb-user-name">${h(u.displayName || '未設定名稱')}</div>
+                <div class="sb-user-email">${h(u.email || '')}</div>
+            </div>
+        </div>
+      </nav>
+      <div id="main">
+        <div id="topbar">
+          <button class="btn btn-secondary btn-sm" style="display:none;padding:6px 10px" id="topbar-menu-btn" onclick="toggleSidebar()">☰</button>
+          <h1 id="topbar-title"></h1>
+          <button class="btn btn-secondary btn-sm" onclick="doSignOut()">登出</button>
+        </div>
+        <div id="content"></div>
+      </div>
+    </div>`;
+}
+
+function attachShellHandlers() {
+    // show menu button on mobile
+    const menuBtn = document.getElementById('topbar-menu-btn');
+    if (menuBtn && window.innerWidth <= 680) menuBtn.style.display = 'flex';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  NO-AUTH PAGES (Login / Register / Config warning)
+// ═══════════════════════════════════════════════════════════
+function noAuthPage() {
+    if (!CONFIGURED) return `<div id="auth-wrap"><div class="auth-card">
+        <div class="config-warn" style="margin-bottom:0">
+            <strong>⚠️ 尚未設定 Firebase</strong>
+            請複製 <code>firebase-config.example.js</code> 為 <code>firebase-config.js</code>，填入您的 Firebase 專案設定後儲存重整。<br>
+            詳細步驟請參閱 <code>README.md</code>。
+        </div>
+    </div></div>`;
+
+    if (S.view === 'auth-register') return `<div id="auth-wrap"><div class="auth-card">
+        <h2>📅 建立帳號</h2>
+        <p class="sub">歡迎加入時間協調工具</p>
+        ${S.authError ? `<div class="alert alert-error">${h(S.authError)}</div>` : ''}
+        <div class="form-group"><label>顯示名稱</label>
+            <input class="fc" id="a-name" type="text" placeholder="您的姓名" maxlength="40" /></div>
+        <div class="form-group"><label>Email</label>
+            <input class="fc" id="a-email" type="email" placeholder="you@example.com" /></div>
+        <div class="form-group"><label>密碼（至少 6 個字元）</label>
+            <input class="fc" id="a-pass" type="password" placeholder="••••••" /></div>
+        <button class="btn btn-primary btn-lg btn-block" id="register-btn">建立帳號</button>
+        <div class="or-divider">或</div>
+        <button class="btn btn-google btn-block" id="google-btn">
+            <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.2l6.8-6.8C35.8 2.2 30.3 0 24 0 14.6 0 6.6 5.4 2.6 13.3l7.9 6.1C12.4 13 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.5 2.9-2.2 5.3-4.6 7l7.2 5.6C43.6 37 46.5 31.2 46.5 24.5z"/><path fill="#FBBC05" d="M10.5 28.6A14.5 14.5 0 0 1 9.5 24c0-1.6.3-3.1.8-4.6l-7.9-6.1A23.9 23.9 0 0 0 0 24c0 3.9.9 7.5 2.6 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.3 0 11.6-2.1 15.4-5.7l-7.2-5.6c-2 1.4-4.7 2.2-8.2 2.2-6.2 0-11.5-4.2-13.4-9.9l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>
+            使用 Google 帳號登入
+        </button>
+        <div class="divider"></div>
+        <p style="text-align:center;font-size:13px;color:var(--text-m)">
+            已有帳號？<a href="#" id="to-login">登入</a>
+        </p>
+    </div></div>`;
+
+    // default: login
+    return `<div id="auth-wrap"><div class="auth-card">
+        <h2>📅 時間協調工具</h2>
+        <p class="sub">登入以管理您的活動</p>
+        ${S.authError ? `<div class="alert alert-error">${h(S.authError)}</div>` : ''}
+        <div class="form-group"><label>Email</label>
+            <input class="fc" id="a-email" type="email" placeholder="you@example.com" /></div>
+        <div class="form-group"><label>密碼</label>
+            <input class="fc" id="a-pass" type="password" placeholder="••••••"
+                onkeydown="if(event.key==='Enter')document.getElementById('login-btn').click()" /></div>
+        <button class="btn btn-primary btn-lg btn-block" id="login-btn">登入</button>
+        <div class="or-divider">或</div>
+        <button class="btn btn-google btn-block" id="google-btn">
+            <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.2l6.8-6.8C35.8 2.2 30.3 0 24 0 14.6 0 6.6 5.4 2.6 13.3l7.9 6.1C12.4 13 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.5 2.9-2.2 5.3-4.6 7l7.2 5.6C43.6 37 46.5 31.2 46.5 24.5z"/><path fill="#FBBC05" d="M10.5 28.6A14.5 14.5 0 0 1 9.5 24c0-1.6.3-3.1.8-4.6l-7.9-6.1A23.9 23.9 0 0 0 0 24c0 3.9.9 7.5 2.6 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.3 0 11.6-2.1 15.4-5.7l-7.2-5.6c-2 1.4-4.7 2.2-8.2 2.2-6.2 0-11.5-4.2-13.4-9.9l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>
+            使用 Google 帳號登入
+        </button>
+        <div class="divider"></div>
+        <p style="text-align:center;font-size:13px;color:var(--text-m)">
+            還沒有帳號？<a href="#" id="to-register">建立帳號</a>
+        </p>
+    </div></div>`;
+}
+
+function attachAuthHandlers() {
+    document.getElementById('login-btn')?.addEventListener('click', doLogin);
+    document.getElementById('register-btn')?.addEventListener('click', doRegister);
+    document.getElementById('google-btn')?.addEventListener('click', doGoogleLogin);
+    document.getElementById('to-register')?.addEventListener('click', e => { e.preventDefault(); S.authError=''; go('auth-register'); });
+    document.getElementById('to-login')?.addEventListener('click', e => { e.preventDefault(); S.authError=''; go('auth-login'); });
+}
+
+async function doLogin() {
+    const email = document.getElementById('a-email').value.trim();
+    const pass  = document.getElementById('a-pass').value;
+    if (!email || !pass) { S.authError='請填寫 Email 和密碼'; go('auth-login'); return; }
+    try { await signInWithEmailAndPassword(auth, email, pass); S.authError=''; }
+    catch(e) { S.authError = authErrMsg(e.code); go('auth-login'); }
+}
+async function doRegister() {
+    const name  = document.getElementById('a-name')?.value.trim() || '';
+    const email = document.getElementById('a-email').value.trim();
+    const pass  = document.getElementById('a-pass').value;
+    if (!email || !pass) { S.authError='請填寫 Email 和密碼'; go('auth-register'); return; }
+    if (pass.length < 6)  { S.authError='密碼至少需要 6 個字元'; go('auth-register'); return; }
+    try {
+        const cred = await createUserWithEmailAndPassword(auth, email, pass);
+        if (name) await updateProfile(cred.user, { displayName: name });
+        S.authError='';
+    } catch(e) { S.authError = authErrMsg(e.code); go('auth-register'); }
+}
+async function doGoogleLogin() {
+    try { await signInWithPopup(auth, gProvider); S.authError=''; }
+    catch(e) { S.authError = authErrMsg(e.code); paint(); }
+}
+async function doSignOut() {
+    S.pollsLoaded = false; S.myPolls = []; S.joinedPolls = [];
+    await signOut(auth);
+}
+function authErrMsg(code) {
+    const map = {
+        'auth/user-not-found':'找不到此帳號',
+        'auth/wrong-password':'密碼錯誤',
+        'auth/invalid-email':'Email 格式不正確',
+        'auth/email-already-in-use':'此 Email 已被使用',
+        'auth/too-many-requests':'嘗試次數過多，請稍後再試',
+        'auth/popup-closed-by-user':'登入視窗已關閉',
+        'auth/invalid-credential':'帳號或密碼錯誤',
+    };
+    return map[code] || `登入失敗（${code}）`;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VIEW: DASHBOARD
+// ═══════════════════════════════════════════════════════════
+function vDashboard() {
+    const name = S.user.displayName || S.user.email?.split('@')[0] || '使用者';
+    const recent = [...S.myPolls, ...S.joinedPolls]
+        .sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||'')).slice(0, 5);
+    const recentHtml = recent.length ? recent.map(p => actCard(p, S.myPolls.find(x=>x.id===p.id)?'created':'joined')).join('')
+        : `<div class="empty-state"><span class="emoji">📭</span>還沒有任何活動</div>`;
+    return `<div class="card">
+        <div class="card-title">👋 嗨，${h(name)}！</div>
+        <div class="card-sub">歡迎回來</div>
+        <div class="btn-group">
+            <button class="btn btn-primary btn-lg" onclick="go('create')">✨ 建立新活動</button>
+            <button class="btn btn-outline btn-lg" onclick="showJoinDialog()">🔗 加入活動</button>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-title" style="margin-bottom:14px">📌 最近活動</div>
+        <div class="activity-list">${recentHtml}</div>
+    </div>`;
+}
+
+function showJoinDialog() {
+    const code = prompt('請輸入活動代碼：')?.trim().toUpperCase();
+    if (!code) return;
+    S.pollId = code; go('poll-loading');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VIEW: POLL LISTS
+// ═══════════════════════════════════════════════════════════
+function vPollList(type) {
+    const polls = type === 'my' ? S.myPolls : S.joinedPolls;
+    const title = type === 'my' ? '📋 我建立的活動' : '👥 我參加過的活動';
+    const empty = type === 'my' ? '還沒有建立任何活動' : '還沒有參加過任何活動';
+    const badgeType = type === 'my' ? 'created' : 'joined';
+    const html = polls.length
+        ? polls.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')).map(p=>actCard(p,badgeType)).join('')
+        : `<div class="empty-state"><span class="emoji">📭</span>${empty}</div>`;
+    const refreshBtn = `<button class="btn btn-secondary btn-sm" onclick="refreshPolls()">🔄 重新整理</button>`;
+    return `<div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <div class="card-title" style="margin-bottom:0">${title}</div>
+            ${refreshBtn}
+        </div>
+        <div class="activity-list">${html}</div>
+    </div>`;
+}
+
+async function refreshPolls() {
+    S.pollsLoaded = false;
+    await loadMyPolls();
+}
+
+function actCard(p, type) {
+    const badge = type==='created'
+        ? `<span class="act-badge badge-created">我建立的</span>`
+        : `<span class="act-badge badge-joined">我參加的</span>`;
+    const slots = (p.slots||[]).length;
+    const resp  = Object.keys(p.responses||{}).length;
+    const dateStr = p.createdAt ? new Date(p.createdAt).toLocaleDateString('zh-TW') : '';
+    return `<div class="act-card" onclick="openPoll('${h(p.id)}')">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+            <h3>${h(p.title)}</h3>${badge}
+        </div>
+        <div class="meta">${slots} 個時間段・${resp} 人已填寫${dateStr ? '・'+dateStr : ''}</div>
+        ${p.desc ? `<div class="meta" style="margin-top:2px">${h(p.desc.slice(0,60))}${p.desc.length>60?'…':''}</div>` : ''}
+    </div>`;
+}
+
+function openPoll(id) { S.pollId = id; go('poll-loading'); }
+
+// ═══════════════════════════════════════════════════════════
+//  VIEW: CREATE
+// ═══════════════════════════════════════════════════════════
+function vCreate() {
+    const today = new Date().toISOString().slice(0,10);
+    const slotsHtml = S.slots.map(s => `
+        <div class="slot-row">
+            <input class="fc" type="date" min="${today}" value="${h(s.date)}"
+                onchange="slotSet('${s.id}','date',this.value)" />
+            <input class="fc" type="time" value="${h(s.start)}" placeholder="開始"
+                onchange="slotSet('${s.id}','start',this.value)" />
+            <input class="fc" type="time" value="${h(s.end)}" placeholder="結束(可選)"
+                onchange="slotSet('${s.id}','end',this.value)" />
+            <button class="btn btn-secondary btn-sm remove-btn" onclick="slotRemove('${s.id}')"
+                ${S.slots.length===1?'disabled':''}>✕</button>
+        </div>`).join('');
+
+    return `<div class="card">
+        <div class="card-title">✨ 建立新活動</div>
+        <div class="card-sub">填好後將連結傳給參與者</div>
+        <div class="form-group"><label>活動名稱 *</label>
+            <input class="fc" id="f-title" type="text" maxlength="100"
+                placeholder="例：Q2 專案啟動會議" value="${h(S.draft?.title||'')}" /></div>
+        <div class="form-group"><label>描述（可選）</label>
+            <textarea class="fc" id="f-desc" rows="2" maxlength="400"
+                placeholder="會議目的、地點…">${h(S.draft?.desc||'')}</textarea></div>
+        <div class="form-group">
+            <label>候選時間段（至少 1 個）</label>
+            <p style="font-size:12px;color:var(--text-m);margin-bottom:9px">日期 ｜ 開始 ｜ 結束（可留空）</p>
+            <div id="slots-wrap">${slotsHtml}</div>
+            <button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="slotAdd()">＋ 新增時間段</button>
+        </div>
+        <button class="btn btn-primary btn-lg btn-block" onclick="doSubmitCreate()">建立活動 →</button>
+    </div>`;
+}
+
+function slotSet(id, field, val) { const s=S.slots.find(x=>x.id===id); if(s) s[field]=val; }
+function slotAdd()    { syncSlotsFromDom(); S.slots.push(mkSlot()); go('create'); }
+function slotRemove(id) { if(S.slots.length===1) return; syncSlotsFromDom(); S.slots=S.slots.filter(x=>x.id!==id); go('create'); }
+function syncSlotsFromDom() {
+    S.slots.forEach(s => {
+        const de=document.querySelector(`input[onchange*="${s.id},'date'"]`);
+        const se=document.querySelector(`input[onchange*="${s.id},'start'"]`);
+        const ee=document.querySelector(`input[onchange*="${s.id},'end'"]`);
+        if(de) s.date=de.value; if(se) s.start=se.value; if(ee) s.end=ee.value;
+    });
+    S.draft = {
+        title: document.getElementById('f-title')?.value||'',
+        desc:  document.getElementById('f-desc')?.value||'',
+    };
+}
+
+async function doSubmitCreate() {
+    syncSlotsFromDom();
+    const title = (document.getElementById('f-title')?.value||S.draft?.title||'').trim();
+    const desc  = (document.getElementById('f-desc')?.value||S.draft?.desc||'').trim();
+    if (!title) { alert('請輸入活動名稱'); return; }
+    const valid = S.slots.filter(s=>s.date&&s.start);
+    if (!valid.length) { alert('請至少填寫一個有日期＋開始時間的時間段'); return; }
+
+    const pollId = uid().toUpperCase().slice(0,8);
+    const poll = {
+        id: pollId, title, desc,
+        creator: S.user.displayName || S.user.email,
+        creatorUid: S.user.uid,
+        createdAt: new Date().toISOString(),
+        slots: valid.map(s=>({id:s.id,date:s.date,start:s.start,end:s.end,label:fmtSlot(s)})),
+        responses: {}
+    };
+    try {
+        await setDoc(doc(db,'polls',pollId), poll);
+        S.poll = poll; S.pollId = pollId;
+        S.slots = [mkSlot()]; S.draft = null;
+        // add to local list immediately
+        S.myPolls.unshift(poll);
+        go('created');
+    } catch(e) { alert('建立失敗：'+e.message); }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VIEW: CREATED
+// ═══════════════════════════════════════════════════════════
+function vCreated() {
+    const url = shareUrl();
+    return `<div class="card" style="text-align:center;padding:36px">
+        <div style="font-size:56px">🎉</div>
+        <h2 style="margin-top:12px;font-size:22px;font-weight:700">活動建立成功！</h2>
+        <p style="color:var(--text-m);margin-top:4px">${h(S.poll.title)}</p>
+        <div class="alert alert-info" style="margin-top:18px;text-align:left">
+            活動代碼：<strong style="font-size:20px;letter-spacing:3px;font-family:monospace">${S.pollId}</strong>
+        </div>
+        <div class="form-group" style="text-align:left">
+            <label>分享連結</label>
+            <div class="copy-row">
+                <input class="copy-input" id="share-url-el" type="text" value="${h(url)}" readonly />
+                <button class="btn btn-secondary btn-sm" onclick="doCopy('share-url-el',this)">複製</button>
+            </div>
+        </div>
+        <div class="btn-group" style="justify-content:center">
+            <button class="btn btn-primary btn-lg" onclick="S.pollId='${S.pollId}'; go('poll-loading')">我先填寫時間 →</button>
+            <button class="btn btn-secondary" onclick="go('dashboard')">返回首頁</button>
+        </div>
+    </div>`;
+}
+
+function shareUrl() {
+    return location.origin + location.pathname + '?poll=' + (S.pollId||'');
+}
+function doCopy(elId, btn) {
+    const el = document.getElementById(elId); el.select(); document.execCommand('copy');
+    const o = btn.textContent; btn.textContent='已複製！'; setTimeout(()=>btn.textContent=o,2000);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  FIREBASE: LOAD POLL
+// ═══════════════════════════════════════════════════════════
+async function loadPoll() {
+    const content = document.getElementById('content');
+    if (content) content.innerHTML = '<div class="loading">載入活動資訊…<span class="spin"></span></div>';
+    try {
+        const snap = await getDoc(doc(db,'polls',S.pollId));
+        if (!snap.exists()) { errInContent(`找不到代碼「${S.pollId}」的活動`); return; }
+        S.poll = snap.data();
+        // restore previous vote for this user
+        S.votes = { ...(S.poll.responses?.[S.user.uid] || S.poll.responses?.[S.user.displayName] || {}) };
+        // clear URL param
+        history.replaceState({}, '', location.pathname);
+        go('vote');
+    } catch(e) { errInContent(e.message); }
+}
+
+function errInContent(msg) {
+    const c = document.getElementById('content');
+    if (c) c.innerHTML = `<div class="card" style="text-align:center;padding:48px">
+        <span style="font-size:48px">😕</span>
+        <h2 style="margin-top:12px">載入失敗</h2>
+        <p style="color:var(--text-m);margin-top:8px">${h(msg)}</p>
+        <button class="btn btn-primary" style="margin-top:18px" onclick="go('dashboard')">返回首頁</button>
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VIEW: VOTE
+// ═══════════════════════════════════════════════════════════
+function vVote() {
+    const poll = S.poll;
+    const count = Object.keys(poll.responses||{}).length;
+    const slotsHtml = poll.slots.map(slot => {
+        const v = S.votes[slot.id]||'';
+        return `<div class="slot-card">
+            <div class="slot-card-title">🗓 ${h(fmtSlot(slot))}</div>
+            <div class="avail-sel" data-slotid="${slot.id}">
+                <button class="avail-btn${v==='yes'   ?' sel-yes':''}"   onclick="castVote('${slot.id}','yes')">✅ 可以</button>
+                <button class="avail-btn${v==='maybe' ?' sel-maybe':''}" onclick="castVote('${slot.id}','maybe')">🟡 大概可以</button>
+                <button class="avail-btn${v==='no'    ?' sel-no':''}"    onclick="castVote('${slot.id}','no')">❌ 不行</button>
+            </div>
+        </div>`;
+    }).join('');
+
+    const displayName = S.user.displayName || S.user.email || '';
+    return `<div class="card">
+        <div class="card-title">${h(poll.title)}</div>
+        ${poll.desc ? `<p style="color:var(--text-m);font-size:14px;margin-bottom:12px">${h(poll.desc)}</p>` : ''}
+        <p style="font-size:13px;color:var(--text-m);margin-bottom:18px">由 ${h(poll.creator)} 建立・${count} 人已填寫</p>
+        <div class="form-group">
+            <label>填寫者</label>
+            <input class="fc" id="voter-name" type="text" value="${h(displayName)}"
+                maxlength="40" placeholder="您的顯示名稱（可修改）" />
+        </div>
+        <div class="form-group">
+            <label>請選擇您的可用時間</label>
+            ${slotsHtml}
+        </div>
+        <div class="btn-group">
+            <button class="btn btn-success btn-lg" onclick="doSubmitVote()">提交 ✓</button>
+            <button class="btn btn-outline" onclick="S.pollId='${poll.id}'; go('live-init')">查看結果</button>
+        </div>
+    </div>`;
+}
+
+function castVote(slotId, val) {
+    S.votes[slotId] = S.votes[slotId]===val ? undefined : val;
+    if (S.votes[slotId]===undefined) delete S.votes[slotId];
+    document.querySelectorAll(`.avail-sel[data-slotid="${slotId}"] .avail-btn`).forEach((btn,i)=>{
+        const keys=['yes','maybe','no'];
+        btn.className='avail-btn'+(S.votes[slotId]===keys[i] ? ` sel-${keys[i]}` : '');
+    });
+}
+
+async function doSubmitVote() {
+    const nameEl = document.getElementById('voter-name');
+    const name   = nameEl?.value.trim() || S.user.displayName || S.user.email || '';
+    if (!name) { alert('請輸入您的名稱'); return; }
+    if (!Object.keys(S.votes).length && !confirm('您還沒選擇任何時間，確定要提交嗎？')) return;
+    try {
+        const ref = doc(db,'polls',S.pollId);
+        const upd = {};
+        // keyed by UID (secure) + display name for readability in results
+        upd[`responses.${S.user.uid}`] = { ...S.votes, _name: name };
+        await updateDoc(ref, upd);
+        // record participation
+        await setDoc(doc(db,'userPolls',`${S.user.uid}_${S.pollId}`),
+            { uid: S.user.uid, pollId: S.pollId, joinedAt: new Date().toISOString() });
+        // add to joined list if not already there
+        if (!S.myPolls.find(p=>p.id===S.pollId) && !S.joinedPolls.find(p=>p.id===S.pollId)) {
+            S.joinedPolls.unshift(S.poll);
+        }
+        go('results-loading');
+    } catch(e) { alert('提交失敗：'+e.message); }
+}
+
+// ── Live results watcher ───────────────────────────────────
+function listenResults() {
+    const content = document.getElementById('content');
+    if (content) content.innerHTML = '<div class="loading">載入結果…<span class="spin"></span></div>';
+    S.unsub = onSnapshot(doc(db,'polls',S.pollId), snap => {
+        if (!snap.exists()) return;
+        S.poll = snap.data();
+        S.view = 'live';
+        const c = document.getElementById('content');
+        if (c) { c.innerHTML = vResults(); setTopbarTitle(); }
+    }, err => errInContent(err.message));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VIEW: RESULTS
+// ═══════════════════════════════════════════════════════════
+function vResults() {
+    const poll = S.poll;
+    const resp = poll.responses||{};
+    // Build participants list from UID-keyed entries
+    const entries = Object.entries(resp).map(([uid, votes]) => ({
+        name: votes._name || uid, uid, votes
+    }));
+    const n = entries.length;
+
+    const scored = poll.slots.map(slot => {
+        let yes=0,maybe=0,no=0;
+        const yN=[],mN=[],xN=[];
+        entries.forEach(({name,votes}) => {
+            const v = votes[slot.id];
+            if(v==='yes'){yes++;yN.push(name);}
+            else if(v==='maybe'){maybe++;mN.push(name);}
+            else if(v==='no'){no++;xN.push(name);}
+        });
+        const score = n>0 ? (yes*2+maybe)/(n*2) : 0;
+        return {slot,yes,maybe,no,score,yN,mN,xN,
+                allAvail:n>0&&yes+maybe===n,allYes:n>0&&yes===n};
+    }).sort((a,b)=>b.score-a.score);
+
+    const best = scored.filter(s=>s.allAvail&&n>0);
+
+    function hCls(s){ if(s.allYes) return 'heat-great'; if(s.allAvail) return 'heat-good'; if(s.score>=.5) return 'heat-ok'; return 'heat-poor'; }
+    function scLbl(s){
+        if(s.allYes)           return {t:'🌟 所有人都可以！',c:'sc-great'};
+        if(s.allAvail)         return {t:'✅ 所有人都有空',c:'sc-good'};
+        if(s.yes+s.maybe===n-1)return {t:'👍 幾乎所有人有空',c:'sc-ok'};
+        if(n>0)                return {t:`${s.yes+s.maybe}/${n} 人有空`,c:s.score>=.5?'sc-ok':'sc-poor'};
+        return {t:'尚無人填寫',c:'sc-poor'};
+    }
+
+    const slotsHtml = scored.map(s=>{
+        const l=scLbl(s);
+        const yp=n>0?(s.yes/n*100).toFixed(0):0;
+        const mp=n>0?(s.maybe/n*100).toFixed(0):0;
+        const tags=[
+            ...s.yN.map(nm=>`<span class="ptag ptag-yes">✅ ${h(nm)}</span>`),
+            ...s.mN.map(nm=>`<span class="ptag ptag-maybe">🟡 ${h(nm)}</span>`),
+            ...s.xN.map(nm=>`<span class="ptag ptag-no">❌ ${h(nm)}</span>`),
+        ].join('');
+        const gcData = JSON.stringify({t:poll.title,s:s.slot,d:poll.desc||''}).replace(/'/g,'&#39;');
+        const gcBtn=`<button class="btn btn-sm" style="background:#4285F4;color:#fff;gap:4px" onclick='addGC(${gcData})'>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/></svg>
+            加入 Google 日曆</button>`;
+        return `<div class="result-slot ${hCls(s)}">
+            <div class="res-header">
+                <div>
+                    <div class="res-title">${h(fmtSlot(s.slot))}</div>
+                    <span class="sc-badge ${l.c}" style="margin-top:5px;display:inline-block">${l.t}</span>
+                </div>
+                <div style="margin-top:2px">${gcBtn}</div>
+            </div>
+            ${n>0?`
+            <div class="bar-row"><span style="width:52px">✅ ${s.yes}人</span>
+                <div class="bar-out"><div class="bar-in" style="width:${yp}%;background:var(--success)"></div></div>
+            </div>
+            <div class="bar-row"><span style="width:52px">🟡 ${s.maybe}人</span>
+                <div class="bar-out"><div class="bar-in" style="width:${mp}%;background:var(--warning)"></div></div>
+            </div>`:''}
+            ${tags?`<div class="tag-list">${tags}</div>`:''}
+        </div>`;
+    }).join('');
+
+    const banner = best.length>0
+        ? `<div class="alert alert-success">🌟 <strong>所有人都有空的時間：</strong>${best.map(s=>h(fmtSlot(s.slot))).join('、')}</div>`
+        : (n>0?`<div class="alert alert-warning">⚠️ 目前沒有所有人都完全空閒的時間，請參考下方排序</div>`:'');
+
+    const isCreator = poll.creatorUid === S.user.uid;
+    const dlBtns = `
+        <button class="btn btn-secondary btn-sm" onclick="dlHTML()">⬇ 下載 HTML</button>
+        <button class="btn btn-secondary btn-sm" onclick="dlXLSX()">📊 下載 Excel</button>
+        <button class="btn btn-secondary btn-sm" onclick="dlCSV()">📄 下載 CSV</button>`;
+
+    return `<div class="card">
+        ${banner}
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+            <p style="font-size:13px;color:var(--text-m);margin:0">${n} 人已填寫<span class="live-dot" title="即時更新"></span></p>
+            <div class="btn-group">${dlBtns}</div>
+        </div>
+        <div>${slotsHtml}</div>
+        <div class="divider"></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <button class="btn btn-outline btn-sm" onclick="S.pollId='${poll.id}'; go('poll-loading')">✏️ 修改我的填寫</button>
+            <div class="copy-row" style="flex:1;min-width:180px">
+                <input class="copy-input" id="r-url" type="text" value="${h(shareUrl())}" readonly />
+                <button class="btn btn-secondary btn-sm" onclick="doCopy('r-url',this)">複製連結</button>
+            </div>
+        </div>
+    </div>`;
+}
+
+// ── Route 'results-loading' and 'live-init' ────────────────
+// These pseudo-views trigger listenResults
+const origGo = go;
+window.go = function(view, extra={}) {
+    if (view === 'results-loading' || view === 'live-init') {
+        Object.assign(S, extra); S.view = 'results-loading'; paint();
+        listenResults(); return;
+    }
+    origGo(view, extra);
+};
+
+// ═══════════════════════════════════════════════════════════
+//  GOOGLE CALENDAR
+// ═══════════════════════════════════════════════════════════
+function addGC(data) {
+    const {t,s,d} = data;
+    const date = s.date.replace(/-/g,'');
+    const st   = (s.start||'09:00').replace(':','')+'00';
+    const et   = s.end ? s.end.replace(':','')+'00' : nextHour(s.start||'09:00');
+    const url  = new URL('https://calendar.google.com/calendar/render');
+    url.searchParams.set('action','TEMPLATE');
+    url.searchParams.set('text',t);
+    url.searchParams.set('dates',`${date}T${st}/${date}T${et}`);
+    if (d) url.searchParams.set('details',d);
+    window.open(url.toString(),'_blank','noopener,noreferrer');
+}
+function nextHour(t){ const [hh,mm]=t.split(':').map(Number); return String((hh+1)%24).padStart(2,'0')+String(mm).padStart(2,'0')+'00'; }
+
+// ═══════════════════════════════════════════════════════════
+//  DOWNLOAD FUNCTIONS
+// ═══════════════════════════════════════════════════════════
+function getTableData() {
+    const poll = S.poll;
+    const resp = poll.responses||{};
+    const entries = Object.entries(resp).map(([uid,votes])=>({name:votes._name||uid,votes}));
+    const slots = poll.slots;
+    const icon = {yes:'✅',maybe:'🟡',no:'❌','':'-'};
+    // header row
+    const header = ['時間段', ...entries.map(e=>e.name),'✅ 可以','🟡 大概可以','❌ 不行'];
+    const rows = slots.map(slot => {
+        let yes=0,maybe=0,no=0;
+        const cols = entries.map(e=>{
+            const v=e.votes[slot.id]||'';
+            if(v==='yes')yes++; else if(v==='maybe')maybe++; else if(v==='no')no++;
+            return icon[v]||'-';
+        });
+        return [fmtSlot(slot), ...cols, yes, maybe, no];
+    });
+    return {header, rows, title: poll.title};
+}
+
+function dlCSV() {
+    const {header,rows,title} = getTableData();
+    const csv = [header,...rows].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    triggerDownload('\uFEFF'+csv, `${title}_結果.csv`, 'text/csv;charset=utf-8');
+}
+
+function dlXLSX() {
+    if (typeof XLSX === 'undefined') { alert('XLSX 函式庫尚未載入，請稍後再試'); return; }
+    const {header,rows,title} = getTableData();
+    const ws = XLSX.utils.aoa_to_sheet([header,...rows]);
+    // column widths
+    ws['!cols'] = [{wch:28}, ...Array(header.length-1).fill({wch:12})];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '結果');
+    XLSX.writeFile(wb, `${title}_結果.xlsx`);
+}
+
+function dlHTML() {
+    const poll = S.poll;
+    const resp = poll.responses||{};
+    const entries = Object.entries(resp).map(([uid,votes])=>({name:votes._name||uid,votes}));
+    const {header,rows} = getTableData();
+    const thHtml = header.map(c=>`<th>${hStatic(c)}</th>`).join('');
+    const tdRows = rows.map(r=>`<tr>${r.map(c=>`<td>${hStatic(String(c))}</td>`).join('')}</tr>`).join('');
+    const now = new Date().toLocaleString('zh-TW');
+    const html = `<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8">
+<title>${hStatic(poll.title)} — 結果</title>
+<style>body{font-family:sans-serif;padding:24px;color:#1e293b}h1{margin-bottom:4px}p.sub{color:#64748b;margin-bottom:20px}
+table{border-collapse:collapse;width:100%}th,td{border:1px solid #e2e8f0;padding:8px 12px;font-size:14px;text-align:center}
+th{background:#6366f1;color:#fff}tr:nth-child(even){background:#f8fafc}.meta{font-size:12px;color:#94a3b8;margin-top:16px}</style>
+</head><body>
+<h1>📅 ${hStatic(poll.title)}</h1>
+<p class="sub">${poll.desc?hStatic(poll.desc)+'<br>':''
+}由 ${hStatic(poll.creator)} 建立・${entries.length} 人已填寫</p>
+<table><thead><tr>${thHtml}</tr></thead><tbody>${tdRows}</tbody></table>
+<p class="meta">匯出時間：${now}</p>
+</body></html>`;
+    triggerDownload(html, `${poll.title}_結果.html`, 'text/html;charset=utf-8');
+}
+
+function hStatic(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function triggerDownload(content, filename, mime) {
+    const blob = new Blob([content], {type: mime});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════════════════
+function fmtSlot(s) {
+    if (!s) return '';
+    const ds = s.date ? fmtDate(s.date) : '未設定日期';
+    const ts = s.start ? (s.end ? `${s.start} – ${s.end}` : s.start) : '';
+    return ts ? `${ds}　${ts}` : ds;
+}
+function fmtDate(ds) {
+    if (!ds) return '';
+    const d  = new Date(ds+'T00:00:00');
+    const wd = ['日','一','二','三','四','五','六'][d.getDay()];
+    return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日（${wd}）`;
+}
+
+// ── Expose globals ─────────────────────────────────────────
+Object.assign(window, {
+    S, go: window.go,
+    toggleSidebar, doSignOut, showJoinDialog, openPoll, refreshPolls,
+    slotSet, slotAdd, slotRemove, doSubmitCreate,
+    castVote, doSubmitVote,
+    doCopy, addGC,
+    dlCSV, dlXLSX, dlHTML,
+});
+
+init();
+</script>
+</body>
+</html>
