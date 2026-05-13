@@ -365,3 +365,7 @@ a{color:var(--primary-d);}
 /* ── Settings checkbox ── */
 .checkbox-label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;cursor:pointer;color:var(--text);}
 .checkbox-label input[type="checkbox"]{width:16px;height:16px;cursor:pointer;accent-color:var(--primary);}
+
+/* ── Bulk vote panel ── */
+.bulk-panel{background:var(--neutral-l);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px 14px;margin-bottom:14px;}
+:root.dark .bulk-panel{background:#1e2023;}

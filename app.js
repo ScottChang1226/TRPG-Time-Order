@@ -681,6 +681,7 @@ function vVote() {
 
     const count = Object.keys(poll.responses||{}).length;
     const isCreator = poll.creatorUid === S.user.uid;
+    const url = shareUrl();
     const slotsHtml = poll.slots.map(slot => {
         const v = S.votes[slot.id]||'';
         return `<div class="slot-card">
@@ -693,11 +694,27 @@ function vVote() {
         </div>`;
     }).join('');
 
+    const bm = S.bulkMode||'rest';
+    const bulkPanel = `<div class="bulk-panel">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-size:13px;font-weight:600;color:var(--text)">快速填入：</span>
+            <button class="btn btn-sm" style="background:var(--success-l);color:#15803d;border:1px solid #86efac" onclick="bulkVote('yes')">✅ 一律可以</button>
+            <button class="btn btn-sm" style="background:var(--warning-l);color:#92400e;border:1px solid #fde68a" onclick="bulkVote('maybe')">🟡 一律大概可以</button>
+            <button class="btn btn-sm" style="background:var(--danger-l);color:#991b1b;border:1px solid #fca5a5" onclick="bulkVote('no')">❌ 一律不行</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">
+            <span style="font-size:12px;color:var(--text-m)">套用至：</span>
+            <button class="btn btn-sm bulk-mode-btn ${bm==='rest'?'btn-primary':'btn-secondary'}" data-mode="rest" onclick="setBulkMode('rest')">填入剩下時段</button>
+            <button class="btn btn-sm bulk-mode-btn ${bm==='all'?'btn-primary':'btn-secondary'}" data-mode="all" onclick="setBulkMode('all')">全部修改</button>
+        </div>
+    </div>`;
+
     const displayName = S.user.displayName || S.user.email || '';
     const creatorActions = isCreator ? `
         <div class="divider"></div>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <span style="font-size:13px;color:var(--text-m)">建立者操作：</span>
+            <button class="btn btn-outline btn-sm" onclick="startEditPoll()">✏️ 編輯活動</button>
             <button class="btn btn-danger btn-sm" onclick="doDeletePoll()">🗑️ 刪除此活動</button>
         </div>` : '';
 
@@ -717,6 +734,7 @@ function vVote() {
         </div>
         <div class="form-group">
             <label>請選擇您的可用時間</label>
+            ${bulkPanel}
             ${slotsHtml}
         </div>
         <div class="btn-group">
@@ -725,6 +743,15 @@ function vVote() {
         </div>
         ${creatorActions}
         ${participantActions}
+        <div class="divider"></div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+            <span style="font-size:13px;font-weight:600">活動代碼：</span>
+            <code>${h(S.pollId)}</code>
+        </div>
+        <div class="copy-row">
+            <input class="copy-input" id="vote-share-url" type="text" value="${h(url)}" readonly />
+            <button class="btn btn-secondary btn-sm" onclick="doCopy('vote-share-url',this)">複製分享連結</button>
+        </div>
     </div>`;
 }
 
@@ -737,6 +764,25 @@ window.castVote = function(slotId, val) {
     });
 };
 
+window.bulkVote = function(val) {
+    const mode = S.bulkMode || 'rest';
+    (S.poll?.slots || []).forEach(slot => {
+        if (mode === 'rest' && S.votes[slot.id]) return;
+        S.votes[slot.id] = val;
+        document.querySelectorAll(`.avail-sel[data-slotid="${slot.id}"] .avail-btn`).forEach((btn,i)=>{
+            const keys=['yes','maybe','no'];
+            btn.className='avail-btn'+(keys[i]===val?` sel-${val}`:'');
+        });
+    });
+};
+
+window.setBulkMode = function(mode) {
+    S.bulkMode = mode;
+    document.querySelectorAll('.bulk-mode-btn').forEach(b=>{
+        b.className='btn btn-sm bulk-mode-btn '+(b.dataset.mode===mode?'btn-primary':'btn-secondary');
+    });
+};
+
 async function doSubmitVote() {
     const nameEl = document.getElementById('voter-name');
     const name   = nameEl?.value.trim() || S.user.displayName || S.user.email || '';
@@ -745,7 +791,8 @@ async function doSubmitVote() {
     try {
         const ref = doc(db,'polls',S.pollId);
         const upd = {};
-        upd[`responses.${S.user.uid}`] = { ...S.votes, _name: name };
+        const authName = (S.user.displayName || S.user.email?.split('@')[0] || '').trim();
+        upd[`responses.${S.user.uid}`] = { ...S.votes, _name: name, _authName: authName };
         await updateDoc(ref, upd);
         await setDoc(doc(db,'userPolls',`${S.user.uid}_${S.pollId}`),
             { uid: S.user.uid, pollId: S.pollId, joinedAt: new Date().toISOString() });
@@ -838,18 +885,21 @@ function vResults() {
     const settings = poll.settings || {};
     const resp = poll.responses||{};
     const entries = Object.entries(resp).map(([uid, votes]) => ({
-        name: votes._name || uid, uid, votes
+        name: votes._name || uid, uid, votes,
+        authName: votes._authName || ''
     }));
     const n = entries.length;
+    const isCreator = poll.creatorUid === S.user.uid;
 
     const scored = poll.slots.map(slot => {
         let yes=0,maybe=0,no=0;
         const yN=[],mN=[],xN=[];
-        entries.forEach(({name,votes}) => {
+        entries.forEach(({name,votes,authName}) => {
             const v = votes[slot.id];
-            if(v==='yes'){yes++;yN.push(name);}
-            else if(v==='maybe'){maybe++;mN.push(name);}
-            else if(v==='no'){no++;xN.push(name);}
+            const disp = isCreator && authName && authName !== name ? `${name}(${authName})` : name;
+            if(v==='yes'){yes++;yN.push(disp);}
+            else if(v==='maybe'){maybe++;mN.push(disp);}
+            else if(v==='no'){no++;xN.push(disp);}
         });
         const score = n>0 ? (yes*2+maybe)/(n*2) : 0;
         const heat = getSlotHeat({yes,maybe,no}, n, settings);
@@ -894,7 +944,6 @@ function vResults() {
         ? `<div class="alert alert-success">🌟 <strong>所有人都有空的時間：</strong>${best.map(s=>h(fmtSlot(s.slot))).join('、')}</div>`
         : (n>0?`<div class="alert alert-warning">⚠️ 目前沒有所有人都完全空閒的時間，請參考下方排序</div>`:'');
 
-    const isCreator = poll.creatorUid === S.user.uid;
     const deletedBanner = poll.deleted ? `<div class="alert alert-error">⚠️ 此活動已被刪除，資料僅供查閱與下載，無法再填寫。</div>` : '';
     const dlBtns = `
         <button class="btn btn-secondary btn-sm" onclick="dlHTML()">⬇ 下載 HTML</button>
