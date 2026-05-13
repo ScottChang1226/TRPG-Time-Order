@@ -416,10 +416,14 @@ function vCreate() {
         <div class="slot-row">
             <input class="fc" type="date" min="${today}" value="${h(s.date)}"
                 onchange="slotSet('${s.id}','date',this.value)" />
-            <input class="fc" type="time" value="${h(s.start)}" placeholder="開始"
-                onchange="slotSet('${s.id}','start',this.value)" step="300" />
-            <input class="fc" type="time" value="${h(s.end)}" placeholder="結束(可選)"
-                onchange="slotSet('${s.id}','end',this.value)" step="300" />
+            <input class="fc time-fc" type="text" inputmode="numeric" maxlength="5"
+                placeholder="開始 HH:MM" value="${h(s.start)}"
+                oninput="fmtTimeInput(this)"
+                onchange="slotSet('${s.id}','start',this.value)" />
+            <input class="fc time-fc" type="text" inputmode="numeric" maxlength="5"
+                placeholder="結束 HH:MM" value="${h(s.end)}"
+                oninput="fmtTimeInput(this)"
+                onchange="slotSet('${s.id}','end',this.value)" />
             <button class="btn btn-secondary btn-sm remove-btn" onclick="slotRemove('${s.id}')"
                 ${S.slots.length===1?'disabled':''}>✕</button>
         </div>`).join('');
@@ -459,12 +463,14 @@ function vCreate() {
             <div class="date-range-row" style="margin-top:8px">
                 <div style="flex:1;min-width:130px">
                     <label>開始時間</label>
-                    <input class="fc" type="time" id="batch-start-time" step="300" />
+                    <input class="fc time-fc" type="text" inputmode="numeric" maxlength="5"
+                        placeholder="HH:MM" id="batch-start-time" oninput="fmtTimeInput(this)" />
                 </div>
                 <div style="align-self:flex-end;padding-bottom:10px;color:var(--text-m)">～</div>
                 <div style="flex:1;min-width:130px">
                     <label>結束時間（可留空）</label>
-                    <input class="fc" type="time" id="batch-end-time" step="300" />
+                    <input class="fc time-fc" type="text" inputmode="numeric" maxlength="5"
+                        placeholder="HH:MM" id="batch-end-time" oninput="fmtTimeInput(this)" />
                 </div>
             </div>
             <button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="slotBatchAdd()">套用</button>
@@ -505,6 +511,14 @@ window.slotBatchAdd = function() {
 window.slotSet = function(id, field, val) { const s=S.slots.find(x=>x.id===id); if(s) s[field]=val; };
 window.slotAdd = function() { syncSlotsFromDom(); S.slots.push(mkSlot()); go('create'); };
 window.slotRemove = function(id) { if(S.slots.length===1) return; syncSlotsFromDom(); S.slots=S.slots.filter(x=>x.id!==id); go('create'); };
+
+// Auto-format time text input: inserts colon after 2 digits (e.g. "20" → "20:")
+window.fmtTimeInput = function(el) {
+    let v = el.value.replace(/\D/g, '');
+    if (v.length > 4) v = v.slice(0, 4);
+    if (v.length >= 3) v = v.slice(0, 2) + ':' + v.slice(2);
+    el.value = v;
+};
 
 function syncSlotsFromDom() {
     S.slots.forEach(s => {
@@ -977,6 +991,6 @@ function fmtDate(ds) {
 }
 
 // ── Expose globals ─────────────────────────────────────────
-Object.assign(window, { S, go: window.go });
+Object.assign(window, { S, go: window.go, doSubmitCreate, doSubmitVote, doSignOut });
 
 init();
