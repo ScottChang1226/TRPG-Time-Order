@@ -530,16 +530,19 @@ window.slotBatchAdd = function() {
     if (!added.length) { alert('所選範圍內的時間段已全部存在'); return; }
     const proposed = [...S.slots, ...added];
     const overlap = checkSlotOverlap(proposed);
-    if (overlap) {
-        alert(`時間段重疊：「${fmtSlot(overlap.a)}」與「${fmtSlot(overlap.b)}」時間衝突，請調整後再套用。`);
-        return;
-    }
+    if (overlap) alert(`⚠️ 時間段重疊：「${fmtSlot(overlap.a)}」與「${fmtSlot(overlap.b)}」時間衝突，請確認是否正確。`);
     S.slots = sortSlots(proposed);
     go(S.editMode ? 'edit-poll' : 'create');
 };
 
 window.slotSet = function(id, field, val) { const s=S.slots.find(x=>x.id===id); if(s) s[field]=val; };
-window.slotAdd = function() { syncSlotsFromDom(); S.slots.push(mkSlot()); go(S.editMode ? 'edit-poll' : 'create'); };
+window.slotAdd = function() {
+    syncSlotsFromDom();
+    const ov = checkSlotOverlap(S.slots.filter(s=>s.date&&s.start));
+    if (ov) alert(`⚠️ 時間段重疊：「${fmtSlot(ov.a)}」與「${fmtSlot(ov.b)}」時間衝突，請確認是否正確。`);
+    S.slots.push(mkSlot());
+    go(S.editMode ? 'edit-poll' : 'create');
+};
 window.slotRemove = function(id) { if(S.slots.length===1) return; syncSlotsFromDom(); S.slots=S.slots.filter(x=>x.id!==id); go(S.editMode ? 'edit-poll' : 'create'); };
 
 // Auto-format time text input: inserts colon after 2 digits (e.g. "20" → "20:")
@@ -582,7 +585,7 @@ async function doSubmitCreate() {
     const rawValid = S.slots.filter(s=>s.date&&s.start);
     if (!rawValid.length) { alert('請至少填寫一個有日期＋開始時間的時間段'); return; }
     const overlapC = checkSlotOverlap(rawValid);
-    if (overlapC) { alert(`時間段重疊：「${fmtSlot(overlapC.a)}」與「${fmtSlot(overlapC.b)}」時間衝突，請調整後再建立。`); return; }
+    if (overlapC) alert(`⚠️ 時間段重疊：「${fmtSlot(overlapC.a)}」與「${fmtSlot(overlapC.b)}」時間衝突，請確認是否正確。`);
     const valid = sortSlots(rawValid);
 
     const noThreshold = parseInt(document.querySelector('.no-thresh-btn.btn-primary')?.dataset?.val||'1');
@@ -1031,7 +1034,24 @@ function vResults() {
     const outcomes = poll.outcomes || {};
     const todayISO = localISO(new Date());
 
-    const scored = poll.slots.map(slot => {
+    // Overlapping slots both marked success → show warning in results
+    const overlapSuccessWarnings = (() => {
+        const ws = [];
+        const sf = poll.slots.filter(s => s.date && s.start);
+        for (let i = 0; i < sf.length; i++)
+            for (let j = i+1; j < sf.length; j++) {
+                const a=sf[i], b=sf[j];
+                if (a.date !== b.date) continue;
+                if ((a.start===b.start)||(a.end&&b.end&&a.start<b.end&&b.start<a.end))
+                    if (outcomes[a.id]==='success'&&outcomes[b.id]==='success')
+                        ws.push(`「${fmtSlot(a)}」與「${fmtSlot(b)}」`);
+            }
+        return ws;
+    })();
+    const overlapSuccessBanner = overlapSuccessWarnings.length
+        ? `<div class="alert alert-warning">⚠️ <strong>注意：以下重疊時段均標記為約團成功，請確認是否正確：</strong><br>${overlapSuccessWarnings.map(s=>`・${s}`).join('<br>')}</div>`
+        : '';
+
         let yes=0,maybe=0,no=0;
         const yN=[],mN=[],xN=[];
         entries.forEach(({name,votes,authName}) => {
@@ -1077,6 +1097,7 @@ function vResults() {
             </div>
         </div>
         ${deletedBanner}
+        ${overlapSuccessBanner}
         ${tabBar}`;
 
     // ── Record tab ──
@@ -1278,7 +1299,7 @@ async function doSubmitEdit() {
     const rawValid=S.slots.filter(s=>s.date&&s.start);
     if(!rawValid.length){alert('請至少填寫一個有日期＋開始時間的時間段');return;}
     const overlapE=checkSlotOverlap(rawValid);
-    if(overlapE){alert(`時間段重疊：「${fmtSlot(overlapE.a)}」與「${fmtSlot(overlapE.b)}」時間衝突，請調整後再儲存。`);return;}
+    if(overlapE) alert(`⚠️ 時間段重疊：「${fmtSlot(overlapE.a)}」與「${fmtSlot(overlapE.b)}」時間衝突，請確認是否正確。`);
     const valid=sortSlots(rawValid);
     const noThreshold=parseInt(document.querySelector('.no-thresh-btn.btn-primary')?.dataset?.val||'1');
     const maybeAsNo=document.getElementById('f-maybe-as-no')?.checked||false;
