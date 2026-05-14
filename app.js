@@ -502,12 +502,15 @@ function vCreate() {
                 </div>
             </div>
             <label class="checkbox-label">
-                <input type="checkbox" id="f-maybe-as-no" ${maybeAsNo?'checked':''}> 將「大概可以」視為「不行」計算
+                <input type="checkbox" id="f-maybe-override-on" ${(maybeAsNo||maybeAsYes)?'checked':''}>
+                將「大概可以」視為
+                <select id="f-maybe-override-val" class="fc" style="width:auto;padding:2px 6px;font-size:13px;margin:0 4px">
+                    <option value="no"  ${maybeAsNo? 'selected':''}>「不行」</option>
+                    <option value="yes" ${maybeAsYes?'selected':''}>「可以」</option>
+                </select>
+                計算
             </label>
-            <label class="checkbox-label" style="margin-top:6px">
-                <input type="checkbox" id="f-maybe-as-yes" ${maybeAsYes?'checked':''}> 將「大概可以」視為「可以」計算
-            </label>
-            <p style="font-size:11px;color:var(--text-m);margin-top:6px">此設定影響結果頁的顏色顯示，不影響填寫。兩項同時勾選時以「不行」優先。</p>
+            <p style="font-size:11px;color:var(--text-m);margin-top:6px">勾選後生效；此設定影響結果頁的顏色顯示，不影響填寫。</p>
         </div>
         <button class="btn btn-primary btn-lg btn-block" style="margin-top:16px" onclick="doSubmitCreate()">建立活動 →</button>
     </div>`;
@@ -582,8 +585,8 @@ function syncSlotsFromDom() {
         desc:  document.getElementById('f-desc')?.value||'',
         settings: {
             noThreshold: activeThresh ? parseInt(activeThresh.dataset.val) : (S.draft?.settings?.noThreshold||1),
-            maybeAsNo:  document.getElementById('f-maybe-as-no')?.checked  ?? (S.draft?.settings?.maybeAsNo||false),
-            maybeAsYes: document.getElementById('f-maybe-as-yes')?.checked ?? (S.draft?.settings?.maybeAsYes||false),
+            maybeAsNo:  (document.getElementById('f-maybe-override-on')?.checked && document.getElementById('f-maybe-override-val')?.value === 'no')  ?? (S.draft?.settings?.maybeAsNo||false),
+            maybeAsYes: (document.getElementById('f-maybe-override-on')?.checked && document.getElementById('f-maybe-override-val')?.value === 'yes') ?? (S.draft?.settings?.maybeAsYes||false),
         },
     };
 }
@@ -600,8 +603,10 @@ async function doSubmitCreate() {
     const valid = sortSlots(rawValid);
 
     const noThreshold = parseInt(document.querySelector('.no-thresh-btn.btn-primary')?.dataset?.val||'1');
-    const maybeAsNo  = document.getElementById('f-maybe-as-no')?.checked||false;
-    const maybeAsYes = document.getElementById('f-maybe-as-yes')?.checked||false;
+    const _overrideOn  = document.getElementById('f-maybe-override-on')?.checked||false;
+    const _overrideVal = document.getElementById('f-maybe-override-val')?.value||'no';
+    const maybeAsNo  = _overrideOn && _overrideVal === 'no';
+    const maybeAsYes = _overrideOn && _overrideVal === 'yes';
     const pollId = uid().toUpperCase().slice(0,8);
     const poll = {
         id: pollId, title, desc,
@@ -1388,8 +1393,10 @@ async function doSubmitEdit() {
     if(overlapE) alert(`⚠️ 時間段重疊：「${fmtSlot(overlapE.a)}」與「${fmtSlot(overlapE.b)}」時間衝突，請確認是否正確。`);
     const valid=sortSlots(rawValid);
     const noThreshold=parseInt(document.querySelector('.no-thresh-btn.btn-primary')?.dataset?.val||'1');
-    const maybeAsNo =document.getElementById('f-maybe-as-no')?.checked||false;
-    const maybeAsYes=document.getElementById('f-maybe-as-yes')?.checked||false;
+    const _overrideOn  = document.getElementById('f-maybe-override-on')?.checked||false;
+    const _overrideVal = document.getElementById('f-maybe-override-val')?.value||'no';
+    const maybeAsNo  = _overrideOn && _overrideVal === 'no';
+    const maybeAsYes = _overrideOn && _overrideVal === 'yes';
     try{
         await updateDoc(doc(db,'polls',S.pollId),{
             title,desc,
@@ -1475,12 +1482,15 @@ function vEditPoll() {
                 </div>
             </div>
             <label class="checkbox-label">
-                <input type="checkbox" id="f-maybe-as-no" ${maybeAsNo?'checked':''}> 將「大概可以」視為「不行」計算
+                <input type="checkbox" id="f-maybe-override-on" ${(maybeAsNo||maybeAsYes)?'checked':''}>
+                將「大概可以」視為
+                <select id="f-maybe-override-val" class="fc" style="width:auto;padding:2px 6px;font-size:13px;margin:0 4px">
+                    <option value="no"  ${maybeAsNo? 'selected':''}>「不行」</option>
+                    <option value="yes" ${maybeAsYes?'selected':''}>「可以」</option>
+                </select>
+                計算
             </label>
-            <label class="checkbox-label" style="margin-top:6px">
-                <input type="checkbox" id="f-maybe-as-yes" ${maybeAsYes?'checked':''}> 將「大概可以」視為「可以」計算
-            </label>
-            <p style="font-size:11px;color:var(--text-m);margin-top:6px">此設定影響結果頁的顏色顯示，不影響填寫。兩項同時勾選時以「不行」優先。</p>
+            <p style="font-size:11px;color:var(--text-m);margin-top:6px">勾選後生效；此設定影響結果頁的顏色顯示，不影響填寫。</p>
         </div>
         <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
             <button class="btn btn-primary btn-lg" onclick="doSubmitEdit()">儲存修改 ✓</button>
