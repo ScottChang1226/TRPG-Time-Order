@@ -47,9 +47,9 @@ body{
 
 /* ── Sidebar ── */
 #sidebar{
-  width:var(--sidebar-w);min-height:100vh;background:var(--sb-bg);color:var(--sb-text);
+  width:var(--sidebar-w);height:100vh;background:var(--sb-bg);color:var(--sb-text);
   display:flex;flex-direction:column;transition:width .25s,transform .25s;
-  flex-shrink:0;position:relative;z-index:50;
+  flex-shrink:0;position:sticky;top:0;z-index:50;overflow-y:auto;
 }
 #sidebar.collapsed{width:56px;}
 #sidebar.collapsed .sb-label{display:none;}
