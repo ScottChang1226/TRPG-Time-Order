@@ -1045,6 +1045,43 @@ window.doSetOutcome = async function(slotId, status) {
         }
     } catch(e) { alert('更新失敗：' + e.message); }
 };
+
+window.doConfirmSlot = async function(slotId, heat, checked) {
+    if (!S.poll || S.poll.creatorUid !== S.user.uid) return;
+    if (!checked) {
+        try {
+            await updateDoc(doc(db, 'polls', S.pollId), { [`confirmed.${slotId}`]: deleteField() });
+        } catch(e) { alert('更新失敗：' + e.message); }
+        return;
+    }
+    const warnLabels = { ok: '部分有空', poor: '有人無法出席', pending: '有人尚未填寫' };
+    if (warnLabels[heat]) {
+        S._pendingConfirmSlotId = slotId;
+        const msg = document.getElementById('confirm-warn-msg');
+        if (msg) msg.innerHTML = `⚠️ 此時段目前狀態為「<strong>${warnLabels[heat]}</strong>」，確定仍要標記為已確定時間嗎？`;
+        const modal = document.getElementById('confirm-warn-modal');
+        if (modal) modal.style.display = 'flex';
+        return;
+    }
+    try {
+        await updateDoc(doc(db, 'polls', S.pollId), { [`confirmed.${slotId}`]: true });
+    } catch(e) { alert('更新失敗：' + e.message); }
+};
+window.closeConfirmWarn = function() {
+    S._pendingConfirmSlotId = null;
+    const c = document.getElementById('content');
+    if (c) c.innerHTML = vResults();
+};
+window.proceedConfirm = async function() {
+    const slotId = S._pendingConfirmSlotId;
+    S._pendingConfirmSlotId = null;
+    const modal = document.getElementById('confirm-warn-modal');
+    if (modal) modal.style.display = 'none';
+    if (!slotId) return;
+    try {
+        await updateDoc(doc(db, 'polls', S.pollId), { [`confirmed.${slotId}`]: true });
+    } catch(e) { alert('更新失敗：' + e.message); }
+};
 window.switchResultsTab = function(tab) {
     S.resultsTab = tab;
     const c = document.getElementById('content');
@@ -1102,6 +1139,7 @@ function vResults() {
     const n = entries.length;
     const isCreator = poll.creatorUid === S.user.uid;
     const outcomes = poll.outcomes || {};
+    const confirmed = poll.confirmed || {};
     const todayISO = localISO(new Date());
 
     // Overlapping slots both marked success → show warning in results
@@ -1190,6 +1228,10 @@ function vResults() {
     const banner = best.length>0
         ? `<div class="alert alert-success">🌟 <strong>所有人都有空的時間：</strong>${best.map(s=>h(fmtSlot(s.slot))).join('、')}</div>`
         : (n>0?`<div class="alert alert-warning">⚠️ 目前沒有所有人都完全空閒的時間，請參考下方排序</div>`:'');
+    const confirmedSlots = scored.filter(s => confirmed[s.slot.id]);
+    const confirmedBanner = confirmedSlots.length > 0
+        ? `<div class="alert alert-confirmed">📌 <strong>已確定的時間：</strong>${confirmedSlots.map(s=>h(fmtSlot(s.slot))).join('、')}</div>`
+        : '';
 
     // ── Apply sort & filter for display ──
     const hRankDisplay = {great:4, good:3, ok:2, poor:1, pending:0};
@@ -1248,13 +1290,26 @@ function vResults() {
         const pendingNote = isPending && s.noVoteNames && s.noVoteNames.length > 0
             ? `<div style="font-size:11px;color:var(--text-m);margin-top:4px">⏳ 尚未回應：${s.noVoteNames.map(nm=>h(nm)).join('、')}</div>`
             : '';
+        const isConfirmed = !!confirmed[s.slot.id];
+        const confirmedBadge = isConfirmed
+            ? `<span class="outcome-banner confirmed-badge">📌 已確定時間</span>`
+            : '';
+        const confirmRow = isCreator && !poll.deleted ? `
+            <div class="confirm-check-row">
+                <label class="checkbox-label" style="font-size:12px;color:var(--text-m)">
+                    <input type="checkbox" ${isConfirmed ? 'checked' : ''}
+                        onchange="doConfirmSlot('${h(s.slot.id)}','${s.heat}',this.checked)">
+                    確定此時間
+                </label>
+            </div>` : '';
 
-        return `<div class="result-slot heat-${s.heat}${outcome?' outcome-slot-'+outcome:''}" id="rs-${s.slot.date||i}">
+        return `<div class="result-slot heat-${s.heat}${outcome?' outcome-slot-'+outcome:''}${isConfirmed?' slot-confirmed':''}" id="rs-${s.slot.date||i}">
             <div class="res-header">
                 <div>
                     <div class="res-title">${h(fmtSlot(s.slot))}</div>
                     <span class="sc-badge ${l.c}" style="margin-top:5px;display:inline-block">${l.t}</span>
                     ${outcomeBadge}
+                    ${confirmedBadge}
                 </div>
                 <div style="margin-top:2px">${gcBtn}</div>
             </div>
@@ -1268,11 +1323,22 @@ function vResults() {
             ${tags?`<div class="tag-list">${tags}</div>`:''}
             ${pendingNote}
             ${outcomeSetRow}
+            ${confirmRow}
         </div>`;
     }).join('');
 
-    return header + banner + `
-        ${n>0 ? vCalendar(scored) : ''}
+    const warnModal = `<div id="confirm-warn-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;align-items:center;justify-content:center;padding:16px">
+        <div style="background:var(--card-bg);border-radius:var(--r);padding:24px;max-width:360px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+            <div id="confirm-warn-msg" style="font-size:14px;line-height:1.6;color:var(--text);margin-bottom:18px"></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+                <button class="btn btn-outline btn-sm" onclick="closeConfirmWarn()">取消</button>
+                <button class="btn btn-primary btn-sm" onclick="proceedConfirm()">仍然確定</button>
+            </div>
+        </div>
+    </div>`;
+
+    return header + confirmedBanner + banner + `
+        ${n>0 ? vCalendar(scored, confirmed) : ''}
         <div style="display:flex;align-items:center;justify-content:space-between;margin:12px 0 8px;flex-wrap:wrap;gap:8px">
             <p style="font-size:13px;color:var(--text-m);margin:0">📋 詳細列表<span class="live-dot" title="即時更新"></span></p>
             <p style="font-size:13px;color:var(--text-m);margin:0">${n} 人已填寫</p>
@@ -1291,7 +1357,7 @@ function vResults() {
         <div class="slot-list-scroll">${slotsHtml}</div>
         <div class="divider"></div>
         <div class="btn-group">${dlBtns}</div>
-    </div>`;
+    </div>${warnModal}`;
 }
 
 // ── Route 'results-loading' and 'live-init' ────────────────
@@ -1308,7 +1374,7 @@ window.go = function(view, extra={}) {
 // ═══════════════════════════════════════════════════════════
 //  CALENDAR WIDGET
 // ═══════════════════════════════════════════════════════════
-function vCalendar(scored) {
+function vCalendar(scored, confirmed = {}) {
     const daySlots = {};
     scored.forEach(s => {
         const d = s.slot.date;
@@ -1366,8 +1432,12 @@ function vCalendar(scored) {
         }
         const times=c.slots.slice(0,2).map(s=>`<div class="cal-time">${s.slot.start||''}${s.slot.end?' – '+s.slot.end:''}</div>`).join('');
         const more=c.slots.length>2?`<div class="cal-time cal-more">+${c.slots.length-2}</div>`:'';
+        const hasConfirmed = c.slots.some(s => confirmed[s.slot.id]);
+        const confirmedMark = hasConfirmed ? `<span style="font-size:10px;line-height:1;float:right">📌</span>` : '';
         return `<div class="cal-cell${bestHeat?' cal-'+bestHeat:''}" onclick="calJump('${c.iso}')">
-            <span class="cal-day-num">${c.d}</span>
+            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                <span class="cal-day-num">${c.d}</span>${confirmedMark}
+            </div>
             <div class="cal-slot-info">${times}${more}</div>
         </div>`;
     }).join('');
@@ -1403,6 +1473,7 @@ function buildCalWidget(prevCursor, nextCursor, title, headHtml, cellsHtml, isMo
             <span class="cal-leg"><span class="cal-leg-dot cal-ok"></span>部分有空</span>
             <span class="cal-leg"><span class="cal-leg-dot cal-poor"></span>有人無法</span>
             <span class="cal-leg"><span class="cal-leg-dot cal-pending"></span>有人未填</span>
+            <span class="cal-leg"><span class="cal-leg-dot cal-confirmed-leg"></span>已確定</span>
         </div>
     </div>`;
 }
@@ -1678,6 +1749,6 @@ function localISO(d) {
 }
 
 // ── Expose globals ─────────────────────────────────────────
-Object.assign(window, { S, go: window.go, doSubmitCreate, doSubmitVote, doSubmitEdit, doSignOut, doSetOutcome: window.doSetOutcome, switchResultsTab: window.switchResultsTab });
+Object.assign(window, { S, go: window.go, doSubmitCreate, doSubmitVote, doSubmitEdit, doSignOut, doSetOutcome: window.doSetOutcome, switchResultsTab: window.switchResultsTab, doConfirmSlot: window.doConfirmSlot, closeConfirmWarn: window.closeConfirmWarn, proceedConfirm: window.proceedConfirm });
 
 init();
