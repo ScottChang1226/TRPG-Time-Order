@@ -428,7 +428,8 @@ function vCreate() {
     const today = new Date().toISOString().slice(0,10);
     const settings = S.draft?.settings || {};
     const noThresh = settings.noThreshold || 1;
-    const maybeAsNo = settings.maybeAsNo || false;
+    const maybeAsNo  = settings.maybeAsNo  || false;
+    const maybeAsYes = settings.maybeAsYes || false;
     const slotsHtml = S.slots.map(s => `
         <div class="slot-row">
             <input class="fc" type="date" min="${today}" value="${h(s.date)}"
@@ -503,7 +504,10 @@ function vCreate() {
             <label class="checkbox-label">
                 <input type="checkbox" id="f-maybe-as-no" ${maybeAsNo?'checked':''}> 將「大概可以」視為「不行」計算
             </label>
-            <p style="font-size:11px;color:var(--text-m);margin-top:6px">此設定影響結果頁的顏色顯示，不影響填寫。</p>
+            <label class="checkbox-label" style="margin-top:6px">
+                <input type="checkbox" id="f-maybe-as-yes" ${maybeAsYes?'checked':''}> 將「大概可以」視為「可以」計算
+            </label>
+            <p style="font-size:11px;color:var(--text-m);margin-top:6px">此設定影響結果頁的顏色顯示，不影響填寫。兩項同時勾選時以「不行」優先。</p>
         </div>
         <button class="btn btn-primary btn-lg btn-block" style="margin-top:16px" onclick="doSubmitCreate()">建立活動 →</button>
     </div>`;
@@ -578,7 +582,8 @@ function syncSlotsFromDom() {
         desc:  document.getElementById('f-desc')?.value||'',
         settings: {
             noThreshold: activeThresh ? parseInt(activeThresh.dataset.val) : (S.draft?.settings?.noThreshold||1),
-            maybeAsNo: document.getElementById('f-maybe-as-no')?.checked ?? (S.draft?.settings?.maybeAsNo||false),
+            maybeAsNo:  document.getElementById('f-maybe-as-no')?.checked  ?? (S.draft?.settings?.maybeAsNo||false),
+            maybeAsYes: document.getElementById('f-maybe-as-yes')?.checked ?? (S.draft?.settings?.maybeAsYes||false),
         },
     };
 }
@@ -595,7 +600,8 @@ async function doSubmitCreate() {
     const valid = sortSlots(rawValid);
 
     const noThreshold = parseInt(document.querySelector('.no-thresh-btn.btn-primary')?.dataset?.val||'1');
-    const maybeAsNo = document.getElementById('f-maybe-as-no')?.checked||false;
+    const maybeAsNo  = document.getElementById('f-maybe-as-no')?.checked||false;
+    const maybeAsYes = document.getElementById('f-maybe-as-yes')?.checked||false;
     const pollId = uid().toUpperCase().slice(0,8);
     const poll = {
         id: pollId, title, desc,
@@ -603,7 +609,7 @@ async function doSubmitCreate() {
         creatorUid: S.user.uid,
         createdAt: new Date().toISOString(),
         slots: valid.map(s=>({id:s.id,date:s.date,start:s.start,end:s.end,label:fmtSlot(s)})),
-        settings: { noThreshold, maybeAsNo },
+        settings: { noThreshold, maybeAsNo, maybeAsYes },
         responses: {}
     };
     try {
@@ -1009,12 +1015,15 @@ function listenResults() {
 function getSlotHeat(s, n, settings) {
     if (n === 0) return 'poor';
     const noThresh = Math.max(1, settings?.noThreshold ?? 1);
-    const maybeAsNo = settings?.maybeAsNo ?? false;
-    const effNo = s.no + (maybeAsNo ? s.maybe : 0);
-    if (s.yes === n) return 'great';
-    if (effNo === 0) return 'good';
-    if (effNo < noThresh) return 'ok';
-    return 'poor';
+    const maybeAsNo  = settings?.maybeAsNo  ?? false;
+    const maybeAsYes = settings?.maybeAsYes ?? false;
+    const effNo  = s.no + (maybeAsNo  ? s.maybe : 0);
+    const effYes = s.yes + (maybeAsYes ? s.maybe : 0);
+    const effMaybe = maybeAsYes ? 0 : s.maybe;
+    if (effYes === n) return 'great';
+    if (effNo >= noThresh) return 'poor';
+    if (effNo === 0) return effYes > effMaybe ? 'good' : 'ok';
+    return 'ok';
 }
 function getSlotLabel(s, n) {
     if (s.heat === 'great') return {t:'🌟 所有人都可以！', c:'sc-great'};
@@ -1379,15 +1388,16 @@ async function doSubmitEdit() {
     if(overlapE) alert(`⚠️ 時間段重疊：「${fmtSlot(overlapE.a)}」與「${fmtSlot(overlapE.b)}」時間衝突，請確認是否正確。`);
     const valid=sortSlots(rawValid);
     const noThreshold=parseInt(document.querySelector('.no-thresh-btn.btn-primary')?.dataset?.val||'1');
-    const maybeAsNo=document.getElementById('f-maybe-as-no')?.checked||false;
+    const maybeAsNo =document.getElementById('f-maybe-as-no')?.checked||false;
+    const maybeAsYes=document.getElementById('f-maybe-as-yes')?.checked||false;
     try{
         await updateDoc(doc(db,'polls',S.pollId),{
             title,desc,
             slots:valid.map(s=>({id:s.id,date:s.date,start:s.start,end:s.end,label:fmtSlot(s)})),
-            settings:{noThreshold,maybeAsNo},
+            settings:{noThreshold,maybeAsNo,maybeAsYes},
             updatedAt:new Date().toISOString(),
         });
-        Object.assign(S.poll,{title,desc,slots:valid.map(s=>({id:s.id,date:s.date,start:s.start,end:s.end})),settings:{noThreshold,maybeAsNo}});
+        Object.assign(S.poll,{title,desc,slots:valid.map(s=>({id:s.id,date:s.date,start:s.start,end:s.end})),settings:{noThreshold,maybeAsNo,maybeAsYes}});
         const idx=S.myPolls.findIndex(p=>p.id===S.pollId);
         if(idx!==-1) S.myPolls[idx]={...S.myPolls[idx],title,desc};
         S.editMode=false; S.slots=[mkSlot()]; S.draft=null;
@@ -1400,7 +1410,8 @@ function vEditPoll() {
     const today=new Date().toISOString().slice(0,10);
     const settings=S.draft?.settings||{};
     const noThresh=settings.noThreshold||1;
-    const maybeAsNo=settings.maybeAsNo||false;
+    const maybeAsNo =settings.maybeAsNo ||false;
+    const maybeAsYes=settings.maybeAsYes||false;
     const slotsHtml=S.slots.map(s=>`
         <div class="slot-row">
             <input class="fc" type="date" value="${h(s.date)}"
@@ -1466,6 +1477,10 @@ function vEditPoll() {
             <label class="checkbox-label">
                 <input type="checkbox" id="f-maybe-as-no" ${maybeAsNo?'checked':''}> 將「大概可以」視為「不行」計算
             </label>
+            <label class="checkbox-label" style="margin-top:6px">
+                <input type="checkbox" id="f-maybe-as-yes" ${maybeAsYes?'checked':''}> 將「大概可以」視為「可以」計算
+            </label>
+            <p style="font-size:11px;color:var(--text-m);margin-top:6px">此設定影響結果頁的顏色顯示，不影響填寫。兩項同時勾選時以「不行」優先。</p>
         </div>
         <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
             <button class="btn btn-primary btn-lg" onclick="doSubmitEdit()">儲存修改 ✓</button>
