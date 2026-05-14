@@ -41,6 +41,7 @@ const S = {
     resultsSort: 'feasibility',
     resultsFilter: 'all',
     darkMode: localStorage.getItem('darkMode') === '1',
+    calModalOpen: false,
 };
 
 // Apply dark mode on load
@@ -207,13 +208,14 @@ function shellHTML() {
         <div class="sb-section-title">我的活動</div>
         ${navItem('my-polls','📋','我建立的活動')}
         ${navItem('joined-polls','👥','我參加過的活動')}
+        <div class="sb-section-title">外觀</div>
+        <button class="dark-toggle" onclick="toggleDarkMode()">
+            <span class="sb-icon">${darkIcon}</span>
+            <span class="sb-label">${darkLabel}</span>
+            <div class="toggle-track"><div class="toggle-thumb"></div></div>
+        </button>
         <div class="sb-spacer"></div>
         <div class="sb-bottom">
-            <button class="dark-toggle" onclick="toggleDarkMode()">
-                <span class="sb-icon">${darkIcon}</span>
-                <span class="sb-label">${darkLabel}</span>
-                <div class="toggle-track"><div class="toggle-thumb"></div></div>
-            </button>
             <div class="sb-user">
                 ${avatarEl}
                 <div class="sb-user-info">
@@ -1306,26 +1308,44 @@ function vCalendar(scored) {
         </div>`;
     }).join('');
 
+    const isMobile = effectiveCalView === 'week' && typeof window !== 'undefined' && window.innerWidth <= 480;
+    const calInner = buildCalWidget(prevCursor, nextCursor, title, headHtml, cellsHtml, isMobile);
+    if (isMobile) {
+        return `<button class="btn btn-secondary cal-modal-open-btn" onclick="openCalModal()">📅 查看日曆</button>
+    <div id="cal-modal" class="cal-modal-overlay">
+        <div class="cal-modal-box" onclick="event.stopPropagation()">
+            <div class="cal-modal-header"><span>📅 日曆</span><button class="cal-modal-close" onclick="closeCalModal()">✕ 關閉</button></div>
+            ${calInner}
+        </div>
+    </div>`;
+    }
+    return calInner;
+}
+function buildCalWidget(prevCursor, nextCursor, title, headHtml, cellsHtml, isMobile) {
+    const viewBtns = isMobile ? '' : `
+            <button class="btn btn-sm ${S.calView==='month'?'btn-primary':'btn-secondary'}" onclick="calSwitch('month')">月</button>
+            <button class="btn btn-sm ${S.calView==='week'?'btn-primary':'btn-secondary'}" onclick="calSwitch('week')">週</button>`;
     return `<div class="cal-widget">
         <div class="cal-toolbar">
             <button class="btn btn-secondary btn-sm" onclick="calNav('${prevCursor}')">◀</button>
             <span class="cal-title">${title}</span>
             <button class="btn btn-secondary btn-sm" onclick="calNav('${nextCursor}')">▶</button>
-            <span style="flex:1"></span>
-            <button class="btn btn-sm ${S.calView==='month'?'btn-primary':'btn-secondary'}" onclick="calSwitch('month')">月</button>
-            <button class="btn btn-sm ${S.calView==='week'?'btn-primary':'btn-secondary'}" onclick="calSwitch('week')">週</button>
+            <span style="flex:1"></span>${viewBtns}
         </div>
         <div class="cal-grid">${headHtml}${cellsHtml}</div>
         <div class="cal-legend">
-            <span class="cal-leg"><span class="cal-leg-dot cal-great"></span>全員可以</span>
-            <span class="cal-leg"><span class="cal-leg-dot cal-good"></span>全員有空</span>
+            <span class="cal-leg"><span class="cal-leg-dot cal-great"></span>全員確認</span>
+            <span class="cal-leg"><span class="cal-leg-dot cal-good"></span>全員無衝突</span>
             <span class="cal-leg"><span class="cal-leg-dot cal-ok"></span>部分有空</span>
             <span class="cal-leg"><span class="cal-leg-dot cal-poor"></span>有人無法</span>
+            <span class="cal-leg"><span class="cal-leg-dot cal-pending"></span>有人未填</span>
         </div>
     </div>`;
 }
-window.calNav    = function(cursor) { S.calCursor=cursor; const c=document.getElementById('content'); if(c) c.innerHTML=vResults(); };
+window.calNav    = function(cursor) { S.calCursor=cursor; const c=document.getElementById('content'); if(c) c.innerHTML=vResults(); if(S.calModalOpen) openCalModal(); };
 window.calSwitch = function(view)   { S.calView=view;     const c=document.getElementById('content'); if(c) c.innerHTML=vResults(); };
+window.openCalModal  = function() { S.calModalOpen=true;  const m=document.getElementById('cal-modal'); if(m) m.style.display='flex'; };
+window.closeCalModal = function() { S.calModalOpen=false; const m=document.getElementById('cal-modal'); if(m) m.style.display='none'; };
 window.calJump   = function(iso) {
     const el=document.querySelector('[id^="rs-'+iso+'"]');
     if(el) el.scrollIntoView({behavior:'smooth',block:'nearest'});
