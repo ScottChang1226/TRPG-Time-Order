@@ -351,10 +351,17 @@ function authErrMsg(code) {
 // ═══════════════════════════════════════════════════════════
 function vDashboard() {
     const name = S.user.displayName || S.user.email?.split('@')[0] || '使用者';
-    const recent = [...S.myPolls, ...S.joinedPolls]
-        .sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||'')).slice(0, 5);
+    let allPolls = [...S.myPolls, ...S.joinedPolls]
+        .sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
+    const hasDeleted = allPolls.some(p => p.deleted);
+    if (S.hideDeleted) allPolls = allPolls.filter(p => !p.deleted);
+    const recent = allPolls.slice(0, 5);
     const recentHtml = recent.length ? recent.map(p => actCard(p, S.myPolls.find(x=>x.id===p.id)?'created':'joined')).join('')
-        : `<div class="empty-state"><span class="emoji">📭</span>還沒有任何活動</div>`;
+        : `<div class="empty-state"><span class="emoji">📭</span>${S.hideDeleted && hasDeleted ? '所有已刪除的活動已被隱藏' : '還沒有任何活動'}</div>`;
+    const hideBtn = hasDeleted
+        ? `<button class="btn btn-sm ${S.hideDeleted ? 'btn-primary' : 'btn-secondary'}" onclick="toggleHideDeleted()">${
+            S.hideDeleted ? '👁 顯示已刪除' : '🙈 隱藏已刪除'}</button>`
+        : '';
     return `<div class="card">
         <div class="card-title">👋 嗨，${h(name)}！</div>
         <div class="card-sub">歡迎回來</div>
@@ -364,7 +371,10 @@ function vDashboard() {
         </div>
     </div>
     <div class="card">
-        <div class="card-title" style="margin-bottom:14px">📌 最近活動</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+            <div class="card-title" style="margin-bottom:0">📌 最近活動</div>
+            ${hideBtn}
+        </div>
         <div class="activity-list">${recentHtml}</div>
     </div>`;
 }
@@ -409,7 +419,10 @@ window.refreshPolls = async function() {
 window.toggleHideDeleted = function() {
     S.hideDeleted = !S.hideDeleted;
     const c = document.getElementById('content');
-    if (c) c.innerHTML = vPollList(S.view === 'my-polls' ? 'my' : 'joined');
+    if (!c) return;
+    if (S.view === 'my-polls') c.innerHTML = vPollList('my');
+    else if (S.view === 'joined-polls') c.innerHTML = vPollList('joined');
+    else if (S.view === 'dashboard') c.innerHTML = vDashboard();
 };
 
 function actCard(p, type) {
