@@ -38,6 +38,8 @@ const S = {
     voteNameDraft: undefined,
     voteWeekIdx: 0,
     resultsTab: 'overview',
+    resultsSort: 'feasibility',
+    resultsFilter: 'all',
     darkMode: localStorage.getItem('darkMode') === '1',
 };
 
@@ -1062,9 +1064,15 @@ function vResults() {
             else if(v==='maybe'){maybe++;mN.push(disp);}
             else if(v==='no'){no++;xN.push(disp);}
         });
+        // 尚未對此時段填寫回應的參加者
+        const noVoteNames = n > 0 ? entries
+            .filter(({votes}) => { const v=votes[slot.id]; return !v||!['yes','maybe','no'].includes(v); })
+            .map(({name,authName}) => isCreator && authName && authName !== name ? `${name}(${authName})` : name)
+            : [];
         const score = n>0 ? (yes*2+maybe)/(n*2) : 0;
-        const heat = getSlotHeat({yes,maybe,no}, n, settings);
-        return {slot,yes,maybe,no,score,yN,mN,xN,heat};
+        const actualHeat = getSlotHeat({yes,maybe,no}, n, settings);
+        const heat = (n > 0 && noVoteNames.length > 0) ? 'pending' : actualHeat;
+        return {slot,yes,maybe,no,score,yN,mN,xN,heat,noVoteNames};
     }).sort((a,b)=>b.score-a.score);
 
     const tab = S.resultsTab || 'overview';
@@ -1115,8 +1123,33 @@ function vResults() {
         ? `<div class="alert alert-success">🌟 <strong>所有人都有空的時間：</strong>${best.map(s=>h(fmtSlot(s.slot))).join('、')}</div>`
         : (n>0?`<div class="alert alert-warning">⚠️ 目前沒有所有人都完全空閒的時間，請參考下方排序</div>`:'');
 
-    const slotsHtml = scored.map((s,i)=>{
-        const l = getSlotLabel(s, n);
+    // ── Apply sort & filter for display ──
+    const hRankDisplay = {great:4, good:3, ok:2, poor:1, pending:0};
+    let displaySlots = [...scored];
+    if (S.resultsFilter === 'perfect') {
+        displaySlots = displaySlots.filter(s => s.heat === 'great' || s.heat === 'good');
+    }
+    if (S.resultsSort === 'feasibility') {
+        displaySlots.sort((a,b) => {
+            const ha = hRankDisplay[a.heat] ?? 0, hb = hRankDisplay[b.heat] ?? 0;
+            if (ha !== hb) return hb - ha;
+            return b.score - a.score;
+        });
+    } else if (S.resultsSort === 'date-asc') {
+        displaySlots.sort((a,b) => {
+            const da=(a.slot.date||'')+(a.slot.start||'00:00'), db=(b.slot.date||'')+(b.slot.start||'00:00');
+            return da < db ? -1 : da > db ? 1 : 0;
+        });
+    } else if (S.resultsSort === 'date-desc') {
+        displaySlots.sort((a,b) => {
+            const da=(a.slot.date||'')+(a.slot.start||'00:00'), db=(b.slot.date||'')+(b.slot.start||'00:00');
+            return da > db ? -1 : da < db ? 1 : 0;
+        });
+    }
+
+    const slotsHtml = displaySlots.map((s,i)=>{
+        const isPending = s.heat === 'pending';
+        const l = isPending ? {t:'⏳ 待所有人確認',c:'sc-pending'} : getSlotLabel(s, n);
         const yp=n>0?(s.yes/n*100).toFixed(0):0;
         const mp=n>0?(s.maybe/n*100).toFixed(0):0;
         const tags=[
@@ -1125,9 +1158,11 @@ function vResults() {
             ...s.xN.map(nm=>`<span class="ptag ptag-no">❌ ${h(nm)}</span>`),
         ].join('');
         const gcData = JSON.stringify({t:poll.title,s:s.slot,d:poll.desc||''}).replace(/'/g,'&#39;');
-        const gcBtn=`<button class="btn btn-sm" style="background:#4285F4;color:#fff;gap:4px" onclick='addGC(${gcData})'>
+        const gcBtn = (s.heat==='great'||s.heat==='good')
+            ? `<button class="btn btn-sm" style="background:#4285F4;color:#fff;gap:4px" onclick='addGC(${gcData})'>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/></svg>
-            加入 Google 日曆</button>`;
+            加入 Google 日曆</button>`
+            : '';
 
         const outcome = outcomes[s.slot.id];
         const isPast = s.slot.date && s.slot.date <= todayISO;
@@ -1142,6 +1177,9 @@ function vResults() {
                 <button class="outcome-btn outcome-btn-success${outcome==='success'?' active':''}" onclick="doSetOutcome('${s.slot.id}','success')">🏆 成功</button>
                 <button class="outcome-btn outcome-btn-failure${outcome==='failure'?' active':''}" onclick="doSetOutcome('${s.slot.id}','failure')">💔 失敗</button>
             </div>` : '';
+        const pendingNote = isPending && s.noVoteNames && s.noVoteNames.length > 0
+            ? `<div style="font-size:11px;color:var(--text-m);margin-top:4px">⏳ 尚未回應：${s.noVoteNames.map(nm=>h(nm)).join('、')}</div>`
+            : '';
 
         return `<div class="result-slot heat-${s.heat}${outcome?' outcome-slot-'+outcome:''}" id="rs-${s.slot.date||i}">
             <div class="res-header">
@@ -1160,6 +1198,7 @@ function vResults() {
                 <div class="bar-out"><div class="bar-in" style="width:${mp}%;background:var(--warning)"></div></div>
             </div>`:''}
             ${tags?`<div class="tag-list">${tags}</div>`:''}
+            ${pendingNote}
             ${outcomeSetRow}
         </div>`;
     }).join('');
@@ -1167,8 +1206,19 @@ function vResults() {
     return header + banner + `
         ${n>0 ? vCalendar(scored) : ''}
         <div style="display:flex;align-items:center;justify-content:space-between;margin:12px 0 8px;flex-wrap:wrap;gap:8px">
-            <p style="font-size:13px;color:var(--text-m);margin:0">📋 詳細列表（依可行性排序）<span class="live-dot" title="即時更新"></span></p>
+            <p style="font-size:13px;color:var(--text-m);margin:0">📋 詳細列表<span class="live-dot" title="即時更新"></span></p>
             <p style="font-size:13px;color:var(--text-m);margin:0">${n} 人已填寫</p>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+            <select class="vote-week-select" style="min-width:auto;flex:0;padding:5px 8px" onchange="setResultsSort(this.value)">
+                <option value="feasibility" ${S.resultsSort==='feasibility'?'selected':''}>依可行性排序</option>
+                <option value="date-asc" ${S.resultsSort==='date-asc'?'selected':''}>依日期（由近到遠）</option>
+                <option value="date-desc" ${S.resultsSort==='date-desc'?'selected':''}>依日期（由遠到近）</option>
+            </select>
+            <select class="vote-week-select" style="min-width:auto;flex:0;padding:5px 8px" onchange="setResultsFilter(this.value)">
+                <option value="all" ${S.resultsFilter==='all'?'selected':''}>全部時段</option>
+                <option value="perfect" ${S.resultsFilter==='perfect'?'selected':''}>只顯示全部人有空</option>
+            </select>
         </div>
         <div class="slot-list-scroll">${slotsHtml}</div>
         <div class="divider"></div>
@@ -1202,8 +1252,10 @@ function vCalendar(scored) {
     if (!allDates.length) return '';
     if (!S.calCursor) S.calCursor = allDates[0];
     const cursor = new Date(S.calCursor + 'T00:00:00');
-    const hRank = {great:3,good:2,ok:1,poor:0};
-    const isMonth = S.calView !== 'week';
+    const hRank = {great:3,good:2,ok:1,poor:0,pending:-1};
+    // 窄螢幕（≤480px）自動使用週曆模式
+    const effectiveCalView = (typeof window !== 'undefined' && window.innerWidth <= 480) ? 'week' : S.calView;
+    const isMonth = effectiveCalView !== 'week';
     let title, cells, prevCursor, nextCursor;
 
     if (isMonth) {
@@ -1276,6 +1328,8 @@ window.calJump   = function(iso) {
     const el=document.querySelector('[id^="rs-'+iso+'"]');
     if(el) el.scrollIntoView({behavior:'smooth',block:'nearest'});
 };
+window.setResultsSort   = function(v) { S.resultsSort=v;   const c=document.getElementById('content'); if(c) c.innerHTML=vResults(); };
+window.setResultsFilter = function(v) { S.resultsFilter=v; const c=document.getElementById('content'); if(c) c.innerHTML=vResults(); };
 
 // ═══════════════════════════════════════════════════════════
 //  EDIT POLL
