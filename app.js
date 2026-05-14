@@ -42,6 +42,7 @@ const S = {
     resultsFilter: 'all',
     darkMode: localStorage.getItem('darkMode') === '1',
     calModalOpen: false,
+    hideDeleted: false,
 };
 
 // Apply dark mode on load
@@ -378,18 +379,24 @@ window.showJoinDialog = function() {
 //  VIEW: POLL LISTS
 // ═══════════════════════════════════════════════════════════
 function vPollList(type) {
-    const polls = type === 'my' ? S.myPolls : S.joinedPolls;
+    let polls = type === 'my' ? S.myPolls : S.joinedPolls;
     const title = type === 'my' ? '📋 我建立的活動' : '👥 我參加過的活動';
     const empty = type === 'my' ? '還沒有建立任何活動' : '還沒有參加過任何活動';
     const badgeType = type === 'my' ? 'created' : 'joined';
+    const hasDeleted = polls.some(p => p.deleted);
+    if (S.hideDeleted) polls = polls.filter(p => !p.deleted);
     const html = polls.length
         ? polls.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')).map(p=>actCard(p,badgeType)).join('')
-        : `<div class="empty-state"><span class="emoji">📭</span>${empty}</div>`;
+        : `<div class="empty-state"><span class="emoji">📭</span>${S.hideDeleted && hasDeleted ? '所有已刪除的活動已被隱藏' : empty}</div>`;
     const refreshBtn = `<button class="btn btn-secondary btn-sm" onclick="refreshPolls()">🔄 重新整理</button>`;
+    const hideBtn = hasDeleted
+        ? `<button class="btn btn-sm ${S.hideDeleted ? 'btn-primary' : 'btn-secondary'}" onclick="toggleHideDeleted()">${
+            S.hideDeleted ? '👁 顯示已刪除' : '🙈 隱藏已刪除'}</button>`
+        : '';
     return `<div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
             <div class="card-title" style="margin-bottom:0">${title}</div>
-            ${refreshBtn}
+            <div style="display:flex;gap:8px;flex-wrap:wrap">${hideBtn}${refreshBtn}</div>
         </div>
         <div class="activity-list">${html}</div>
     </div>`;
@@ -398,6 +405,11 @@ function vPollList(type) {
 window.refreshPolls = async function() {
     S.pollsLoaded = false;
     await loadMyPolls();
+};
+window.toggleHideDeleted = function() {
+    S.hideDeleted = !S.hideDeleted;
+    const c = document.getElementById('content');
+    if (c) c.innerHTML = vPollList(S.view === 'my-polls' ? 'my' : 'joined');
 };
 
 function actCard(p, type) {
