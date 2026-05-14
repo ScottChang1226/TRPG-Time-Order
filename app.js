@@ -192,9 +192,11 @@ function shellHTML() {
     const darkIcon = S.darkMode ? '☀️' : '🌙';
     const darkLabel = S.darkMode ? '切換亮色模式' : '切換深色模式';
 
+    const sbCollapsed = !S.sidebarOpen ? ' collapsed' : '';
+    const sbToggleIcon = S.sidebarOpen ? '◀' : '▶';
     return `<div id="layout">
-      <nav id="sidebar">
-        <button class="sb-toggle" id="sb-toggle-btn" onclick="toggleSidebar()">◀</button>
+      <nav id="sidebar${sbCollapsed}">
+        <button class="sb-toggle" id="sb-toggle-btn" onclick="toggleSidebar()">${sbToggleIcon}</button>
         <div id="sidebar-logo">
             <span class="logo-icon">📅</span>
             <span>時間協調工具</span>
