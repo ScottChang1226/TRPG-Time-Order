@@ -425,6 +425,13 @@ window.toggleHideDeleted = function() {
     else if (S.view === 'dashboard') c.innerHTML = vDashboard();
 };
 
+function getLastViewed(pollId) {
+    return localStorage.getItem(`lv_${S.user?.uid}_${pollId}`) || null;
+}
+function setLastViewed(pollId) {
+    if (S.user?.uid) localStorage.setItem(`lv_${S.user.uid}_${pollId}`, new Date().toISOString());
+}
+
 function actCard(p, type) {
     const isDeleted = !!p.deleted;
     let badge;
@@ -434,17 +441,32 @@ function actCard(p, type) {
 
     const slots = (p.slots||[]).length;
     const resp  = Object.keys(p.responses||{}).length;
-    const dateStr = p.createdAt ? new Date(p.createdAt).toLocaleDateString('zh-TW') : '';
-    return `<div class="act-card${isDeleted?' act-deleted':''}" onclick="openPoll('${h(p.id)}')">
+    const fmtDate = iso => iso ? new Date(iso).toLocaleDateString('zh-TW', {year:'numeric',month:'2-digit',day:'2-digit'}) : '';
+    const createdStr = fmtDate(p.createdAt);
+    const updatedStr = p.updatedAt && p.updatedAt !== p.createdAt ? fmtDate(p.updatedAt) : '';
+    const timeRow = createdStr
+        ? `建立：${createdStr}${updatedStr ? `　修改：${updatedStr}` : ''}`
+        : '';
+
+    // Show update notice only for participants (not creator) when updatedAt > lastViewed
+    const hasModified = type !== 'created' && p.updatedAt && p.updatedAt !== p.createdAt;
+    const lastViewed = getLastViewed(p.id);
+    const needsConfirm = hasModified && (!lastViewed || lastViewed < p.updatedAt);
+    const updateNotice = needsConfirm
+        ? `<div class="act-update-notice">⚠️ 建立者已修改內容，請確認</div>`
+        : '';
+
+    return `<div class="act-card${isDeleted?' act-deleted':''}${needsConfirm?' act-has-update':''}" onclick="openPoll('${h(p.id)}')">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
             <h3>${h(p.title)}${isDeleted?' <span style="text-decoration:line-through;opacity:.5">(已刪除)</span>':''}</h3>${badge}
         </div>
-        <div class="meta">${slots} 個時間段・${resp} 人已填寫${dateStr ? '・'+dateStr : ''}</div>
+        <div class="meta">${slots} 個時間段・${resp} 人已填寫${timeRow ? '・'+timeRow : ''}</div>
         ${p.desc ? `<div class="meta" style="margin-top:2px">${h(p.desc.slice(0,60))}${p.desc.length>60?'…':''}</div>` : ''}
+        ${updateNotice}
     </div>`;
 }
 
-window.openPoll = function(id) { S.pollId = id; go('poll-loading'); };
+window.openPoll = function(id) { setLastViewed(id); S.pollId = id; go('poll-loading'); };
 
 // ═══════════════════════════════════════════════════════════
 //  VIEW: CREATE (with batch slot feature)

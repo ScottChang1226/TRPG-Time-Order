@@ -218,6 +218,10 @@ label{display:block;margin-bottom:5px;font-size:13px;font-weight:600;color:var(-
 .badge-created{background:var(--primary-l);color:var(--primary-d);}
 .badge-joined{background:var(--success-l);color:#15803d;}
 .badge-deleted{background:var(--danger-l);color:#b91c1c;}
+.act-has-update{border-color:#f59e0b;}
+.act-has-update:hover{border-color:#d97706;}
+.act-update-notice{font-size:11px;font-weight:600;color:#92400e;background:#fef3c7;border-radius:4px;padding:3px 8px;margin-top:2px;display:inline-block;}
+:root.dark .act-update-notice{color:#fde68a;background:#292010;}
 
 /* ── Slot input ── */
 .slot-row{
