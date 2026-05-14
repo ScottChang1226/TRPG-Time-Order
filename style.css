@@ -345,24 +345,34 @@ a{color:var(--primary-d);}
 .cal-time{font-size:9px;color:var(--text);background:rgba(0,0,0,.06);border-radius:3px;padding:1px 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .cal-more{font-size:9px;color:var(--text-m);padding:1px 3px;}
 .cal-great{background:#dcfce7;border-top:3px solid var(--success);}
-.cal-good{background:#d1fae5;border-top:3px solid #34d399;}
+.cal-good{background:#cffafe;border-top:3px solid #06b6d4;}
 .cal-ok{background:#fef3c7;border-top:3px solid var(--warning);}
 .cal-poor{background:#fee2e2;border-top:3px solid var(--danger);}
-:root.dark .cal-great{background:#052e16;} :root.dark .cal-good{background:#022c22;}
+:root.dark .cal-great{background:#052e16;} :root.dark .cal-good{background:#0c1f22;}
 :root.dark .cal-ok{background:#1c1400;}   :root.dark .cal-poor{background:#1c0a0a;}
 :root.dark .cal-time{background:rgba(255,255,255,.1);}
 .cal-legend{display:flex;gap:12px;flex-wrap:wrap;padding:8px 14px;background:var(--neutral-l);border-top:1px solid var(--border);font-size:11px;}
 .cal-leg{display:flex;align-items:center;gap:5px;color:var(--text-m);}
 .cal-leg-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0;}
 .cal-leg-dot.cal-great{background:var(--success);}
-.cal-leg-dot.cal-good{background:#34d399;}
+.cal-leg-dot.cal-good{background:#06b6d4;}
 .cal-leg-dot.cal-ok{background:var(--warning);}
 .cal-leg-dot.cal-poor{background:var(--danger);}
+.cal-leg-dot.cal-pending{background:#93c5fd;}
 .cal-pending{background:#dbeafe;border-top:3px solid #93c5fd;}
 :root.dark .cal-pending{background:#0c1a2e;}
 @media(max-width:520px){
   .copy-input{display:none;}
 }
+/* ── Calendar modal (mobile) ── */
+.cal-modal-open-btn{margin-bottom:12px;}
+.cal-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:200;align-items:center;justify-content:center;padding:16px;}
+.cal-modal-box{background:var(--card-bg);border-radius:var(--r);width:100%;max-width:440px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.25);}
+.cal-modal-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--neutral-l);border-bottom:1px solid var(--border);}
+.cal-modal-header span{font-size:14px;font-weight:700;color:var(--text);}
+.cal-modal-close{background:transparent;border:none;font-size:14px;cursor:pointer;color:var(--text-m);padding:4px 8px;border-radius:4px;font-family:inherit;}
+.cal-modal-close:hover{background:rgba(0,0,0,.08);}
+.cal-modal-box .cal-widget{margin-bottom:0;border:none;border-radius:0;border-top:none;}
 
 /* ── Scrollable slot list ── */
 .slot-list-scroll{max-height:560px;overflow-y:auto;padding-right:4px;}
