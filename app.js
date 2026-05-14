@@ -441,12 +441,14 @@ function actCard(p, type) {
 
     const slots = (p.slots||[]).length;
     const resp  = Object.keys(p.responses||{}).length;
-    const fmtDate = iso => iso ? new Date(iso).toLocaleDateString('zh-TW', {year:'numeric',month:'2-digit',day:'2-digit'}) : '';
-    const createdStr = fmtDate(p.createdAt);
-    const updatedStr = p.updatedAt && p.updatedAt !== p.createdAt ? fmtDate(p.updatedAt) : '';
-    const timeRow = createdStr
-        ? `建立：${createdStr}${updatedStr ? `　修改：${updatedStr}` : ''}`
-        : '';
+    const fmtDateTime = iso => {
+        if (!iso) return '';
+        const d = new Date(iso);
+        const pad = n => String(n).padStart(2,'0');
+        return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+    const createdStr = fmtDateTime(p.createdAt);
+    const updatedStr = p.updatedAt && p.updatedAt !== p.createdAt ? fmtDateTime(p.updatedAt) : '';
 
     // Show update notice only for participants (not creator) when updatedAt > lastViewed
     const hasModified = type !== 'created' && p.updatedAt && p.updatedAt !== p.createdAt;
@@ -460,7 +462,8 @@ function actCard(p, type) {
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
             <h3>${h(p.title)}${isDeleted?' <span style="text-decoration:line-through;opacity:.5">(已刪除)</span>':''}</h3>${badge}
         </div>
-        <div class="meta">${slots} 個時間段・${resp} 人已填寫${timeRow ? '・'+timeRow : ''}</div>
+        <div class="meta">${slots} 個時間段・${resp} 人已填寫</div>
+        ${createdStr ? `<div class="meta">建立時間：${createdStr}${updatedStr ? `　最後修改時間：${updatedStr}` : ''}</div>` : ''}
         ${p.desc ? `<div class="meta" style="margin-top:2px">${h(p.desc.slice(0,60))}${p.desc.length>60?'…':''}</div>` : ''}
         ${updateNotice}
     </div>`;
