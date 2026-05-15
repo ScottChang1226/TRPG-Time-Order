@@ -1645,8 +1645,12 @@ function getTableData() {
     const resp = poll.responses||{};
     const entries = Object.entries(resp).map(([uid,votes])=>({name:votes._name||uid,votes}));
     const slots = poll.slots;
+    const outcomes = poll.outcomes || {};
+    const settings = poll.settings || {};
+    const n = entries.length;
     const icon = {yes:'✅',maybe:'🟡',no:'❌','':'-'};
-    const header = ['時間段', ...entries.map(e=>e.name),'✅ 可以','🟡 大概可以','❌ 不行'];
+    const outcomeLabel = {'success':'🏆 約團成功','failure':'💔 失敗','':'—'};
+    const header = ['約團狀態', '時間段', ...entries.map(e=>e.name),'✅ 可以','🟡 大概可以','❌ 不行'];
     const rows = slots.map(slot => {
         let yes=0,maybe=0,no=0;
         const cols = entries.map(e=>{
@@ -1654,22 +1658,52 @@ function getTableData() {
             if(v==='yes')yes++; else if(v==='maybe')maybe++; else if(v==='no')no++;
             return icon[v]||'-';
         });
-        return [fmtSlot(slot), ...cols, yes, maybe, no];
+        const heat = getSlotHeat({yes,maybe,no}, n, settings);
+        const outcome = outcomeLabel[outcomes[slot.id]||''];
+        return [outcome, fmtSlot(slot), ...cols, yes, maybe, no];
     });
-    return {header, rows, title: poll.title};
+
+    // 摘要：約團成功 & 可約團（great/good）
+    const successSlots = slots.filter(s => outcomes[s.id]==='success').map(s=>fmtSlot(s));
+    const availableSlots = slots.filter(s => {
+        if (outcomes[s.id]==='success') return false;
+        let yes=0,maybe=0,no=0;
+        entries.forEach(e=>{const v=e.votes[s.id]||''; if(v==='yes')yes++; else if(v==='maybe')maybe++; else if(v==='no')no++;});
+        const heat = getSlotHeat({yes,maybe,no}, n, settings);
+        return heat==='great'||heat==='good';
+    }).map(s=>fmtSlot(s));
+
+    return {header, rows, title: poll.title, successSlots, availableSlots};
 }
 
 window.dlCSV = function() {
-    const {header,rows,title} = getTableData();
-    const csv = [header,...rows].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const {header,rows,title,successSlots,availableSlots} = getTableData();
+    const summaryRows = [
+        [],
+        ['🏆 約團成功時間'],
+        ...(successSlots.length ? successSlots.map(s=>[s]) : [['（尚未標記）']]),
+        [],
+        ['✅ 可約團時間（全員確認/全員無衝突）'],
+        ...(availableSlots.length ? availableSlots.map(s=>[s]) : [['（目前無）']]),
+    ];
+    const allRows = [header,...rows,...summaryRows];
+    const csv = allRows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
     triggerDownload('\uFEFF'+csv, `${title}_結果.csv`, 'text/csv;charset=utf-8');
 };
 
 window.dlXLSX = function() {
     if (typeof XLSX === 'undefined') { alert('XLSX 函式庫尚未載入，請稍後再試'); return; }
-    const {header,rows,title} = getTableData();
-    const ws = XLSX.utils.aoa_to_sheet([header,...rows]);
-    ws['!cols'] = [{wch:28}, ...Array(header.length-1).fill({wch:12})];
+    const {header,rows,title,successSlots,availableSlots} = getTableData();
+    const summaryAoa = [
+        [],
+        ['🏆 約團成功時間'],
+        ...(successSlots.length ? successSlots.map(s=>[s]) : [['（尚未標記）']]),
+        [],
+        ['✅ 可約團時間（全員確認/全員無衝突）'],
+        ...(availableSlots.length ? availableSlots.map(s=>[s]) : [['（目前無）']]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet([header,...rows,...summaryAoa]);
+    ws['!cols'] = [{wch:12},{wch:28},...Array(header.length-2).fill({wch:12})];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '結果');
     XLSX.writeFile(wb, `${title}_結果.xlsx`);
@@ -1679,19 +1713,92 @@ window.dlHTML = function() {
     const poll = S.poll;
     const resp = poll.responses||{};
     const entries = Object.entries(resp).map(([uid,votes])=>({name:votes._name||uid,votes}));
-    const {header,rows} = getTableData();
+    const {header,rows,successSlots,availableSlots} = getTableData();
+    const now = new Date().toLocaleString('zh-TW');
+    const settings = poll.settings||{};
+    const n = entries.length;
+    const hRank = {great:3,good:2,ok:1,poor:0,pending:-1};
+    const heatBg = {great:'#dcfce7',good:'#cffafe',ok:'#fef3c7',poor:'#fee2e2',pending:'#dbeafe','':'#f8fafc'};
+    const heatBorder = {great:'#22c55e',good:'#06b6d4',ok:'#f59e0b',poor:'#ef4444',pending:'#93c5fd','':'#e2e8f0'};
+
+    // Build calendar
+    const daySlots = {};
+    poll.slots.forEach(slot => {
+        if (!slot.date) return;
+        if (!daySlots[slot.date]) daySlots[slot.date] = [];
+        let yes=0,maybe=0,no=0;
+        entries.forEach(e=>{const v=e.votes[slot.id]||''; if(v==='yes')yes++; else if(v==='maybe')maybe++; else if(v==='no')no++;});
+        const heat = getSlotHeat({yes,maybe,no},n,settings);
+        daySlots[slot.date].push({slot,heat});
+    });
+    const allDates = Object.keys(daySlots).sort();
+    let calHtml = '';
+    if (allDates.length) {
+        const first = new Date(allDates[0]+'T00:00:00');
+        const last  = new Date(allDates[allDates.length-1]+'T00:00:00');
+        const wd = ['日','一','二','三','四','五','六'];
+        let monthHtml = '';
+        for (let curYr=first.getFullYear(),curMo=first.getMonth();
+             curYr<last.getFullYear()||(curYr===last.getFullYear()&&curMo<=last.getMonth());) {
+            const firstDay = new Date(curYr,curMo,1);
+            const daysInMonth = new Date(curYr,curMo+1,0).getDate();
+            let cells = '';
+            for(let i=0;i<firstDay.getDay();i++) cells+=`<div style="background:#f1f5f9;min-height:52px"></div>`;
+            for(let d=1;d<=daysInMonth;d++){
+                const iso=`${curYr}-${String(curMo+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                const sl=daySlots[iso]||[];
+                let bestHeat='';
+                if(sl.length){const best=sl.reduce((a,b)=>(hRank[a.heat]||0)>=(hRank[b.heat]||0)?a:b);bestHeat=best.heat;}
+                const borderTop=sl.length?`border-top:3px solid ${heatBorder[bestHeat]};`:'';
+                const times=sl.slice(0,2).map(({slot:s})=>`<div style="font-size:9px;background:rgba(0,0,0,.07);border-radius:2px;padding:1px 3px;margin-top:1px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${s.start||''}${s.end?' – '+s.end:''}</div>`).join('');
+                const more=sl.length>2?`<div style="font-size:9px;color:#64748b">+${sl.length-2}</div>`:'';
+                cells+=`<div style="background:${heatBg[bestHeat]||'#f8fafc'};${borderTop}min-height:52px;padding:4px;display:flex;flex-direction:column">
+                    <span style="font-size:12px;font-weight:600;color:#475569;line-height:1">${d}</span>
+                    ${times}${more}
+                </div>`;
+            }
+            while((firstDay.getDay()+daysInMonth)%7!==0) cells+=`<div style="background:#f1f5f9;min-height:52px"></div>`;
+            monthHtml+=`<div style="margin-bottom:20px">
+                <div style="font-size:14px;font-weight:700;margin-bottom:8px">${curYr}年${curMo+1}月</div>
+                <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:#e2e8f0;border:1px solid #e2e8f0">
+                    ${wd.map(w=>`<div style="background:#6366f1;color:#fff;text-align:center;font-size:11px;font-weight:700;padding:5px 2px">${w}</div>`).join('')}
+                    ${cells}
+                </div>
+            </div>`;
+            curMo++; if(curMo>11){curMo=0;curYr++;}
+        }
+        const legendItems=[
+            {h:'great',label:'全員確認'},{h:'good',label:'全員無衝突'},
+            {h:'ok',label:'部分有空'},{h:'poor',label:'有人無法'},{h:'pending',label:'有人未填'}
+        ].map(({h,label})=>`<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:${heatBorder[h]};display:inline-block"></span>${label}</span>`).join('');
+        calHtml=`<h2>📅 時間日曆</h2>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:#64748b;margin-bottom:12px">${legendItems}</div>
+            ${monthHtml}`;
+    }
+
+    const mkList = arr => arr.length
+        ? `<ul>${arr.map(s=>`<li>${hStatic(s)}</li>`).join('')}</ul>`
+        : `<p style="color:#94a3b8;font-size:13px">（目前無）</p>`;
     const thHtml = header.map(c=>`<th>${hStatic(c)}</th>`).join('');
     const tdRows = rows.map(r=>`<tr>${r.map(c=>`<td>${hStatic(String(c))}</td>`).join('')}</tr>`).join('');
-    const now = new Date().toLocaleString('zh-TW');
     const html = `<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8">
 <title>${hStatic(poll.title)} — 結果</title>
-<style>body{font-family:sans-serif;padding:24px;color:#1e293b}h1{margin-bottom:4px}p.sub{color:#64748b;margin-bottom:20px}
-table{border-collapse:collapse;width:100%}th,td{border:1px solid #e2e8f0;padding:8px 12px;font-size:14px;text-align:center}
-th{background:#6366f1;color:#fff}tr:nth-child(even){background:#f8fafc}.meta{font-size:12px;color:#94a3b8;margin-top:16px}</style>
-</head><body>
+<style>
+body{font-family:sans-serif;padding:24px;color:#1e293b;max-width:960px;margin:0 auto}
+h1{margin-bottom:4px}h2{color:#4338ca;font-size:16px;margin-top:28px;margin-bottom:8px}
+p.sub{color:#64748b;margin-bottom:20px}
+table{border-collapse:collapse;width:100%;margin-top:12px;table-layout:auto}
+th,td{border:1px solid #e2e8f0;padding:7px 10px;font-size:13px;text-align:center}
+th{background:#6366f1;color:#fff}tr:nth-child(even){background:#f8fafc}
+ul{font-size:14px;line-height:1.8;margin:8px 0 0 0;padding-left:20px}
+.meta{font-size:12px;color:#94a3b8;margin-top:16px}
+</style></head><body>
 <h1>📅 ${hStatic(poll.title)}</h1>
-<p class="sub">${poll.desc?hStatic(poll.desc)+'<br>':''
-}由 ${hStatic(poll.creator)} 建立・${entries.length} 人已填寫</p>
+<p class="sub">${poll.desc?hStatic(poll.desc)+'<br>':''}由 ${hStatic(poll.creator)} 建立・${entries.length} 人已填寫</p>
+${calHtml}
+<h2>🏆 約團成功時間</h2>${mkList(successSlots)}
+<h2>✅ 可約團時間（全員確認 / 全員無衝突）</h2>${mkList(availableSlots)}
+<h2>📊 詳細填寫結果</h2>
 <table><thead><tr>${thHtml}</tr></thead><tbody>${tdRows}</tbody></table>
 <p class="meta">匯出時間：${now}</p>
 </body></html>`;
