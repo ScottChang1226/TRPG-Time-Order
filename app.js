@@ -1663,13 +1663,17 @@ function getTableData() {
         return [outcome, fmtSlot(slot), ...cols, yes, maybe, no];
     });
 
-    // 摘要：約團成功 & 可約團（great/good）
-    const successSlots = slots.filter(s => outcomes[s.id]==='success').map(s=>fmtSlot(s));
+    // 摘要：已確定時間（= poll.confirmed）& 所有人都有空（great/good，且無人未填）
+    const confirmed = poll.confirmed || {};
+    const successSlots = slots.filter(s => confirmed[s.id]).map(s=>fmtSlot(s));
     const availableSlots = slots.filter(s => {
-        if (outcomes[s.id]==='success') return false;
-        let yes=0,maybe=0,no=0;
-        entries.forEach(e=>{const v=e.votes[s.id]||''; if(v==='yes')yes++; else if(v==='maybe')maybe++; else if(v==='no')no++;});
-        const heat = getSlotHeat({yes,maybe,no}, n, settings);
+        let yes=0,maybe=0,no=0,noVote=0;
+        entries.forEach(e=>{
+            const v=e.votes[s.id]||'';
+            if(v==='yes')yes++; else if(v==='maybe')maybe++; else if(v==='no')no++; else noVote++;
+        });
+        const actualHeat = getSlotHeat({yes,maybe,no}, n, settings);
+        const heat = (n>0 && noVote>0) ? 'pending' : actualHeat;
         return heat==='great'||heat==='good';
     }).map(s=>fmtSlot(s));
 
@@ -1757,7 +1761,8 @@ window.dlHTML = function() {
                     ${times}${more}
                 </div>`;
             }
-            while((firstDay.getDay()+daysInMonth)%7!==0) cells+=`<div style="background:#f1f5f9;min-height:52px"></div>`;
+            const trailing = (7 - (firstDay.getDay()+daysInMonth)%7) % 7;
+            for(let i=0;i<trailing;i++) cells+=`<div style="background:#f1f5f9;min-height:52px"></div>`;
             monthHtml+=`<div style="margin-bottom:20px">
                 <div style="font-size:14px;font-weight:700;margin-bottom:8px">${curYr}年${curMo+1}月</div>
                 <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:#e2e8f0;border:1px solid #e2e8f0">
